@@ -12,7 +12,7 @@
 param([switch]$IncludeDoctor)
 $ErrorActionPreference = 'Continue'
 $home_ = $env:USERPROFILE
-function San([string]$s) { if ($null -eq $s) { return '' }; [regex]::Replace($s, [regex]::Escape($home_), '%USERPROFILE%', 'IgnoreCase') }
+function San([string]$s) { if ($null -eq $s) { return '' }; $s = [regex]::Replace($s, [regex]::Escape($home_), '%USERPROFILE%', 'IgnoreCase'); $posix = '/' + $home_.Substring(0,1).ToLower() + ($home_.Substring(2) -replace '\\','/'); [regex]::Replace($s, [regex]::Escape($posix), '%USERPROFILE%', 'IgnoreCase') }
 function Sec([string]$t) { "`n## $t`n" }
 function Run([string]$label, [scriptblock]$b) {
   "**$label**"; '```text'
@@ -100,7 +100,10 @@ Run 'Versions' {
 }
 Run 'WSL distributions' { (wsl.exe -l -v 2>&1) -join "`n" -replace "`0", '' }
 
-Run 'Git probes from Git Bash (second shell)' {
-  $bash = (Get-Command bash -ErrorAction SilentlyContinue | Select-Object -First 1)
-  if ($bash) { & $bash.Source -c 'command -v git; git --version; git branch --show-current; git status --short --branch; command -v codex; codex --version' } else { 'bash not found' }
+Run 'Git probes from Git Bash (second shell; uses only the bash that ships with the resolved git, never the WSL launcher)' {
+  $g = Get-Command git -ErrorAction SilentlyContinue | Select-Object -First 1
+  $bash = if ($g) { Join-Path (Split-Path (Split-Path $g.Source -Parent) -Parent) 'bin\bash.exe' }
+  if ($bash -and (Test-Path $bash)) {
+    & $bash -c 'uname -s; command -v git; git --version; git branch --show-current; git status --short --branch; command -v codex; codex --version' 2>&1 | ForEach-Object { San "$_" }
+  } else { 'Git for Windows bash.exe not found next to git; second-shell probe skipped (bash on PATH may be the WSL launcher and is deliberately not used)' }
 }
