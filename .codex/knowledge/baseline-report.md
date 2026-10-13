@@ -19,15 +19,15 @@ checked, or checkable only by the operator.
 | Codex binary | `%USERPROFILE%\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe`, native Windows `.exe`, not a script wrapper; one `codex` on PATH; `codex-cli 0.162.1` in both shells; `version.json` reports latest = 0.162.1 | `Get-Command -All codex`, `codex --version` (both) |
 | Runtime layout | "standalone" package under `%USERPROFILE%\.codex\packages\standalone\releases\0.162.1-x86_64-pc-windows-msvc`, install "consistent" | `codex doctor --summary` (PowerShell) |
 | Authentication | `codex login status` → "Logged in using ChatGPT"; `doctor` → "auth is configured". `CODEX_HOME`, `OPENAI_API_KEY`, `CODEX_API_KEY` are unset. Credential files were not read. | PowerShell |
-| Git | git 2.53.0.windows.2; root `C:/TEST-repos/codex-prime`; branch `main` with **no commits**; single worktree; no stash; `core.autocrlf=true` | PowerShell |
+| Git (state at capture, before this PR) | git 2.53.0.windows.2; root `C:/TEST-repos/codex-prime`; branch `main` with **no commits**; single worktree; no stash; `core.autocrlf=true` | PowerShell |
 | Remote | `origin` → `https://github.com/JackSmack1971/codex-prime.git`; the GitHub repo is **public and empty** (no branches); local upstream shows `[gone]`; `gh` is authenticated with ADMIN permission | `git remote -v`, `gh repo view` |
 | Pre-existing changes | Two untracked files only, no tracked diffs: `BLUEPRINT.md` (154151 bytes, sha256 `7489C316…`), `CLAUDE.md` (6555 bytes, sha256 `D29C516B…`). Left untouched and uncommitted. | `git status`, `Get-FileHash` |
 | Project control-plane files | None: no `AGENTS.md`, `.codex/`, `.agents/`, `.codex-runtime/`, `.gitignore`, `.gitattributes`, `tests/` | `Test-Path` |
-| Instructions (project) | No project `AGENTS.md`. | |
+| Instructions (project) | No project `AGENTS.md`. | `Test-Path` |
 | Instructions (above repo) | `C:\TEST-repos\AGENTS.md` (27216 bytes) and `C:\AGENTS.md` (5080 bytes) exist. Neither was loaded into the model-visible prompt when launched from the repo root (`codex debug prompt-input`: no path or content from either appears; cwd `C:\TEST-repos\codex-prime`). Contents were not read. | `Test-Path`, `codex debug prompt-input` |
-| Instructions (user) | No `~/.codex/AGENTS.md` or `AGENTS.override.md`. | |
+| Instructions (user) | No `~/.codex/AGENTS.md` or `AGENTS.override.md`. | `Test-Path` |
 | Existing agents | No `.codex/agents/` in the project or `~/.codex/`. | `Test-Path` |
-| Skills | None in the project. User scope `~/.agents/skills`: 46 skill directories plus 4 loose files (`AGENTS.md`, `CATEGORY_INDEX.md`, `CATEGORY_MAP.csv`, `inventory-report.tmp`). System skills in `~/.codex/skills/.system`: imagegen, openai-docs, review-agent, skill-creator, skill-installer. The model-visible prompt lists 48 skills (user + system) at the repo root. Names overlapping future blueprint skills (§3.3 names such as `security-review`, `implementation`, `repository-recon`): none of those exact names is installed; closest user-level names are `implementation-slice`, `recon-gate`, `review-change`, `verification-gate`. | directory listing, `codex debug prompt-input` |
+| Skills | None in the project. User scope `~/.agents/skills`: 46 directories (43 contain `SKILL.md`; `evals`, `scripts`, `tests` do not) plus 4 loose files (`AGENTS.md`, `CATEGORY_INDEX.md`, `CATEGORY_MAP.csv`, `inventory-report.tmp`); names are listed in the probe snapshot (§5). System skills in `~/.codex/skills/.system`: imagegen, openai-docs, review-agent, skill-creator, skill-installer. The model-visible prompt at the repo root lists **47** skills (43 user + 4 system; `review-agent` is not surfaced). None of the BLUEPRINT §3.3 skill names (e.g. `security-review`, `repository-recon`, `task-triage`) is installed; nearest user-level names: `implementation-slice`, `recon-gate`, `review-change`, `verification-gate`. Skill descriptions and a frontmatter-level duplicate check were not captured (U13). | directory listing, `codex debug prompt-input` |
 | Hooks | No project hooks; no `~/.codex/hooks.json`. Feature `hooks` = stable, enabled. | `Test-Path`, `codex features list` |
 | Execution rules | User `~/.codex/rules/default.rules`: 59 lines, all `decision="allow"` prefix rules, accumulated from other projects' approvals. Includes broad allows for `gh` and `git push` and `git switch`. No `forbidden`/`prompt` rules. Rule text not reproduced here (contains other projects' paths). | file inspection (PowerShell) |
 | Config layers | User `config.toml` has keys `model`, `model_reasoning_effort`, `[tui]`, `[windows] sandbox`, and two `[projects.*]` trust entries for **other** paths. No `[projects]` entry for `codex-prime`. No managed config at `C:\ProgramData\OpenAI\Codex` or `C:\ProgramData\codex`. No retired settings (`approval_policy`, `features.codex_hooks`, `agents.max_threads`) among the key names. | key-name listing |
@@ -41,7 +41,7 @@ checked, or checkable only by the operator.
 
 ## 2. Windows vs WSL differences
 
-Observed: native Windows `codex.exe` 0.162.1 is installed and works from both PowerShell and Git
+Observed: Git Bash invoked from PowerShell as `bash -c` resolves `git` to `/usr/bin/git` (2.53.0, MSYS build) and does **not** find `codex` (`command not found`), whereas the PowerShell shell and the Claude Code Bash tool shell both resolve `codex`; PATH differs by launch path (environment-specific, not "unsupported"). Git results (branch, status) were identical in both shells. Observed: native Windows `codex.exe` 0.162.1 is installed and works from both PowerShell and Git
 Bash; the Codex Windows sandbox is configured at user level; `codex sandbox` exposes a single
 Windows restricted-token form. Git Bash is MSYS, not WSL: its `uname` reports `MINGW64_NT`.
 Unresolved: whether Codex is installed inside the Ubuntu WSL distro, and how Linux sandbox
@@ -51,10 +51,10 @@ Unresolved: whether Codex is installed inside the Ubuntu WSL distro, and how Lin
 
 | ID | Item | Why unresolved | Status |
 | --- | --- | --- | --- |
-| U1 | Project trust for `codex-prime` | Not in user config. Trust is an operator decision; the project `.codex/` layer will be skipped until trusted. | `BLOCKED: operator` |
-| U2 | Hook trust and `/hooks` state | Interactive TUI only; no hooks exist yet. | `BLOCKED: operator` |
+| U1 | Project trust for `codex-prime` | Not in user config. Trust is an operator decision; the project `.codex/` layer will be skipped until trusted. Operator command: `cd C:\TEST-repos\codex-prime; codex` and answer the trust prompt (interactive; nothing is written by the builder). | `BLOCKED: operator` |
+| U2 | Hook trust and `/hooks` state | Interactive TUI only; no hooks exist yet. Operator command (after hooks exist, Phase 4): start `codex` in the repo and run `/hooks`. | `BLOCKED: operator` |
 | U3 | Ancestor `AGENTS.md` (`C:\TEST-repos`, `C:\`) exclusion from the instruction chain | Observed absent from the prompt at the repo root; not yet checked from a nested launch directory, or once a project `AGENTS.md` exists. Contents unread, so their conflict potential with the contract is unknown. | Open (Phase 1) |
-| U4 | Effective layer precedence, sandbox mode, and approval policy for a trusted project | Needs a trusted project and `/status`. | `BLOCKED: operator` |
+| U4 | Effective layer precedence, sandbox mode, and approval policy for a trusted project | Needs a trusted project and `/status`. Operator command: start `codex` in the repo (after U1) and run `/status`; optional log: `codex -c log_dir=./.codex-log`. | `BLOCKED: operator` |
 | U5 | Protected-path behavior (`.git`, `.codex`, `.agents`) and default network state under `workspace-write` | Needs a `codex exec`/sandbox runtime run (paid session or sandbox probe) that was not made in this slice. | Open |
 | U6 | Windows sandbox actual behavior (`codex sandbox`) | Not executed to keep the slice non-intrusive. | Open |
 | U7 | WSL/Linux: Codex presence and `bubblewrap` behavior | WSL distros stopped; not started. | Open |
@@ -62,7 +62,8 @@ Unresolved: whether Codex is installed inside the Ubuntu WSL distro, and how Lin
 | U9 | How to set approval policy for `codex exec` runs, and the `--json` event schema | No `--ask-for-approval` in `exec --help`; event schema not observed (no paid run made). | Open |
 | U10 | Defender exclusions; stale app-server daemon | Reported by `doctor`; may affect runtime tests. Operator/host action, not altered. | Open |
 | U11 | Existing required tests / known working verification commands | Repository has no code, tests, or CI. | N/A: none exist |
-| U12 | Public-repo exposure | `JackSmack1971/codex-prime` is public. Files committed here become public. | Noted |
+| U13 | Skill descriptions and duplicate detection (BLUEPRINT §0.2) | Names and `SKILL.md` presence recorded; frontmatter descriptions not extracted. Names show no exact duplicates between user and system scopes. | Open |
+| U12 | Public-repo exposure | `JackSmack1971/codex-prime` is public. Files committed here become public. Commit 1c28129 on the PR branch briefly published two other projects' trust-path names and one quoted config key; they are redacted from this revision but remain in that commit's history unless the branch is squashed. | Noted |
 
 ## 4. Blueprint vs installed-binary conflicts found
 
@@ -79,11 +80,7 @@ These belong in `.codex/knowledge/native-capabilities.md` (S02, not created in t
 
 ## 5. Probe output snapshot
 
-Output of `tools/control_plane/collect_baseline.ps1` from PowerShell 7.6.2 follows, verbatim except
-for the line wrapping of Markdown. Items marked Observed above that came from other commands
-(`doctor`, `prompt-input`, `--help`) are not repeated here.
-
-Note: this snapshot was taken after this report and the probe script were written, so they also appear as untracked files and `.codex`/`tools` exist; the pre-existing state is the two files in §1.
+Output of `tools/control_plane/collect_baseline.ps1` run from PowerShell 7.6.2 (heading levels shifted by this report). Facts from other commands (`doctor`, `prompt-input`, `--help`) are not repeated. The snapshot was taken on branch `p0-s01-baseline` after the report and script existed, so those files and `.codex`/`tools` appear as changes; the pre-existing state is the two files in §1. Other projects' trust paths and quoted keys are redacted by the script.
 
 ### Probe run (shell: PowerShell 7.6.2 Core)
 
@@ -153,30 +150,30 @@ CODEX_API_KEY set: False
 ```text
 git: git version 2.53.0.windows.2
 root: C:/TEST-repos/codex-prime
-branch: main
-HEAD: none (no commits)
+branch: p0-s01-baseline
+HEAD: 1c281295052f3d0980e9f6ce4d9f78bf1af8395c
 remotes:
 origin	https://github.com/JackSmack1971/codex-prime.git (fetch)
 origin	https://github.com/JackSmack1971/codex-prime.git (push)
 worktrees:
-C:/TEST-repos/codex-prime 0000000 [main]
+C:/TEST-repos/codex-prime 1c28129 [p0-s01-baseline]
 status:
-#### No commits yet on main...origin/main [gone]
-?? .codex/
+#### p0-s01-baseline...origin/p0-s01-baseline
+ M tools/control_plane/collect_baseline.ps1
 ?? BLUEPRINT.md
 ?? CLAUDE.md
-?? tools/
 diff --stat:
+warning: in the working copy of 'tools/control_plane/collect_baseline.ps1', LF will be replaced by CRLF the next time Git touches it
+ tools/control_plane/collect_baseline.ps1 | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
 cached --stat:
 stash entries: 0
 core.autocrlf: true
 ```
 **Untracked file inventory (size, sha256 prefix)**
 ```text
-.codex/knowledge/baseline-report.md 10257 bytes sha256=C81E7E8307281116
 BLUEPRINT.md 154151 bytes sha256=7489C3168D9B4340
 CLAUDE.md 6555 bytes sha256=D29C516B692F43E3
-tools/control_plane/collect_baseline.ps1 5864 bytes sha256=C7AAF5D07605CA5F
 ```
 
 #### Existing control-plane artifacts
@@ -210,19 +207,21 @@ user config.toml sections/keys (values omitted):
   [tui]
     key: screen_reader_detection_done
   [tui.model_availability_nux]
-    key: "gpt-6.1-sol"
-  [projects.'c:\workspaces\deployed\substack-publisher-mcp']
+    key: <quoted key redacted>
+  [projects.<redacted>]
     key: trust_level
-  [projects.'c:\test-repos\experimental-01']
+  [projects.<redacted>]
     key: trust_level
   [windows]
     key: sandbox
 default.rules: 59 lines; decisions: allow=59
 system skills: imagegen, openai-docs, review-agent, skill-creator, skill-installer
 ```
-**User-level skills in ~/.agents/skills (directory count only; names are in the report)**
+**User-level skills in ~/.agents/skills (counts, SKILL.md presence, names)**
 ```text
 directories: 46
+with SKILL.md: 43; without: evals, scripts, tests
+user skill names: ai-systems-reliability-architecture, architecture-evolution-reviewer, architecture-gate, autonomy-budgeter, brainstorming-ux-features, change-blast-radius-mapper, changelog-updater, code-auditor, current-docs-research, debug-loop, engineering-flow, evals, evidence-trust-firewall, executable-acceptance-criteria, feedback-loop-builder, finish-pr, generate-codeowners, generating-readmes, github-actions-workflow-review, harness-agents-engineer, harness-context-engineer, harness-engineer, harness-skill-engineer, implementation-slice, intent-preserving-conflict-resolver, long-horizon-goal-steward, maintaining-repository-hygiene, mutation-hardening, pr-review-standard, product-delivery, product-discovery, recon-gate, repository-agents-md, repository-garbage-collector, review-change, scripts, skill-composition-planner, skill-improvement-engine, skill-run-evidence-extension, skillifier, source-of-truth-reconciler, subagent-topology-planner, tests, two-brain-review, ux-product-evolution, verification-gate
 files at top level: AGENTS.md, CATEGORY_INDEX.md, CATEGORY_MAP.csv, inventory-report.tmp
 ```
 **Managed/admin config locations**
@@ -262,4 +261,16 @@ wsl | C:\WINDOWS\system32\wsl.exe | WSL version: 2.6.1.0
   docker-desktop    Stopped         2
 
 
+```
+**Git probes from Git Bash (second shell)**
+```text
+/usr/bin/git
+git version 2.53.0
+p0-s01-baseline
+#### p0-s01-baseline...origin/p0-s01-baseline
+ M .codex/knowledge/baseline-report.md
+ M tools/control_plane/collect_baseline.ps1
+?? BLUEPRINT.md
+?? CLAUDE.md
+/bin/bash: line 1: codex: command not found
 ```

@@ -12,7 +12,7 @@
 param([switch]$IncludeDoctor)
 $ErrorActionPreference = 'Continue'
 $home_ = $env:USERPROFILE
-function San([string]$s) { if ($null -eq $s) { return '' }; $s.Replace($home_, '%USERPROFILE%') }
+function San([string]$s) { if ($null -eq $s) { return '' }; [regex]::Replace($s, [regex]::Escape($home_), '%USERPROFILE%', 'IgnoreCase') }
 function Sec([string]$t) { "`n## $t`n" }
 function Run([string]$label, [scriptblock]$b) {
   "**$label**"; '```text'
@@ -79,12 +79,14 @@ Run 'User-level Codex layer (names only)' {
   foreach ($n in 'config.toml', 'hooks.json', 'AGENTS.md', 'AGENTS.override.md', 'rules\default.rules') { "{0,-22} exists: {1}" -f $n, (Test-Path "$c\$n") }
   "user config.toml sections/keys (values omitted):"
   Get-Content "$c\config.toml" | ForEach-Object {
-    if ($_ -match '^\s*\[(.+)\]') { "  [$($Matches[1])]" } elseif ($_ -match '^\s*([A-Za-z0-9_.\-"]+)\s*=') { "    key: $($Matches[1])" } }
+    if ($_ -match '^\s*\[projects\.') { "  [projects.<redacted>]" } elseif ($_ -match '^\s*\[(.+)\]') { "  [$($Matches[1])]" } elseif ($_ -match '^\s*([A-Za-z0-9_.\-"]+)\s*=') { if ($Matches[1] -match '^"') { "    key: <quoted key redacted>" } else { "    key: $($Matches[1])" } } }
   "default.rules: $((Get-Content "$c\rules\default.rules").Count) lines; decisions: " + ((Select-String -Path "$c\rules\default.rules" -Pattern 'decision="(\w+)"' -AllMatches).Matches | Group-Object { $_.Groups[1].Value } | ForEach-Object { "$($_.Name)=$($_.Count)" }) -join ', '
   "system skills: $((Get-ChildItem "$c\skills\.system" -Directory -Name) -join ', ')"
 }
-Run 'User-level skills in ~/.agents/skills (directory count only; names are in the report)' {
+Run 'User-level skills in ~/.agents/skills (counts, SKILL.md presence, names)' {
   "directories: $((Get-ChildItem "$home_\.agents\skills" -Directory | Measure-Object).Count)"
+  $d = Get-ChildItem "$home_\.agents\skills" -Directory; "with SKILL.md: $((($d | Where-Object { Test-Path "$($_.FullName)\SKILL.md" }) | Measure-Object).Count); without: $((($d | Where-Object { -not (Test-Path "$($_.FullName)\SKILL.md") }).Name) -join ', ')"
+  "user skill names: $($d.Name -join ', ')"
   "files at top level: $((Get-ChildItem "$home_\.agents\skills" -File -Name) -join ', ')"
 }
 Run 'Managed/admin config locations' { foreach ($p in 'C:\ProgramData\OpenAI\Codex', 'C:\ProgramData\codex') { "$p exists: $(Test-Path $p)" } }
@@ -97,3 +99,8 @@ Run 'Versions' {
   }
 }
 Run 'WSL distributions' { (wsl.exe -l -v 2>&1) -join "`n" -replace "`0", '' }
+
+Run 'Git probes from Git Bash (second shell)' {
+  $bash = (Get-Command bash -ErrorAction SilentlyContinue | Select-Object -First 1)
+  if ($bash) { & $bash.Source -c 'command -v git; git --version; git branch --show-current; git status --short --branch; command -v codex; codex --version' } else { 'bash not found' }
+}
