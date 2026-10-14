@@ -16,7 +16,6 @@ revert, stage, or commit changes you did not make, including untracked files.
 Pointers (read when relevant, if the file exists):
 - `.codex/knowledge/contracts.md`: task, delegation, evidence, change, and completion contracts.
 - `.codex/knowledge/native-capabilities.md`: what Codex supports here; check before using a config key, hook field, or agent field.
-- `.codex/` and `.agents/` are read-only in `workspace-write`. Propose edits there; do not work around the sandbox.
 
 ## Scale the process to the task
 - Small, clear change: just do it and check it. No plan document, no agents, no full suite.
@@ -26,12 +25,13 @@ Pointers (read when relevant, if the file exists):
   reporting completion.
 
 ## Skills and subagents
-Use a skill from `.agents/skills/` when its description matches the task. Delegate to subagents
+Use a skill from `.agents/skills/` (if present) when its description matches the task. Delegate to subagents
 only for independent, read-heavy work (mapping code, security inspection, test-gap analysis) on
 multi-component or high-risk tasks; delegation is optional and never required for small tasks.
 Do not give two agents write access to the same files. You own integration and the final answer.
 
 ## Implementation constraints
+- `.codex/` and `.agents/` are read-only in `workspace-write`. Request the escalation or propose the edit; do not work around the sandbox.
 - Prefer the existing architecture and conventions; preserve compatibility unless asked otherwise.
 - No unrelated refactors, no weakened or skipped tests, no invented dependencies or APIs.
 - Do not push, deploy, publish, merge, rotate secrets, or touch production or shared data

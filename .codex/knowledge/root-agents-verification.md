@@ -30,4 +30,9 @@ loaded instructions. One run on one prompt is a smoke check, not a behavioral gu
   (contracts, `task-triage`, agents) and is not claimed here.
 - Not tested: `AGENTS.override.md`, `project_doc_fallback_filenames`, the 32 KiB cap, a global file.
 - `.codex/knowledge/contracts.md` and the `.agents/skills/` directory do not exist yet; the
-  contract references them conditionally ("if the file exists").
+  contract references them conditionally ("if the file exists", "if present").
+- A repeat run with `-c 'approval_policy="never"'` and a saved event stream produced no events
+  and had not finished after several minutes; it is unresolved, not passed. The first run's
+  stream was not saved, so the lightweight-work result is not independently reproducible.
+- `.gitignore` for `.codex-runtime/` (P1-S01) was merged into `p0-s03-config-baseline`, not
+  `main`, so `main` lacks it. Tracked separately from this slice.
