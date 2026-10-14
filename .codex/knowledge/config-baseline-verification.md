@@ -6,7 +6,7 @@ credentials were not read or written. Scratch repos and homes lived under the se
 
 ## 1. Delivered file
 
-Keys (all cited in `native-capabilities.md` rows 21, 25-26 and §4 B4 plus the docs MCP page `config-file/config-basic`):
+Keys (binary evidence: `native-capabilities.md` §4 B4 key table, including the `ignore_default_excludes` row added in this slice; docs: D3 `config-file/config-basic`, D4 `config-file/config-reference`; context rows 11, 12, 5, 20 and 25 for sandbox, approvals, agents, network and retired values):
 
 | Key | Value | Why |
 | --- | --- | --- |
@@ -23,11 +23,11 @@ Deliberately absent: `default_permissions`/`[permissions.*]` (silently ignored w
 
 | ID | Check | Result | State |
 | --- | --- | --- | --- |
-| V1 | `python -I tools/control_plane/validate_config.py --codex --self-test` | exact-content and policy checks pass; 14/14 mutations (untrusted/on-failure/never, danger-full-access, network true or removed, excludes ignored, `writable_roots`, profile alongside `sandbox_mode`, MCP server, legacy alias, unknown key, changed concurrency) are detected | PASS (static) |
-| V2 | File loaded as the user layer of a throwaway `CODEX_HOME`; `codex doctor --json` | `config.load ok`, `config.toml parse: ok`. Negative control: `max_concurrent_threads_per_session = "x"` → `failed to load bootstrap configuration`, exit 1, so the loader does read the file | PASS (parse under installed binary) |
+| V1 | `python -I tools/control_plane/validate_config.py --codex --self-test` | exact-content and policy checks pass; 15/15 mutations, each tripping its own named check where one exists (untrusted/on-failure/never, danger-full-access, network true or removed, excludes ignored, `writable_roots`, profile alongside `sandbox_mode`, MCP server, legacy alias, unknown key, changed concurrency) are detected | PASS (static) |
+| V2 | File loaded as the user layer of a throwaway `CODEX_HOME`; `codex doctor --json` | `config.load ok`, `config.toml parse: ok`. Negative control: `max_concurrent_threads_per_session = "x"` → `codex features list` prints `failed to load bootstrap configuration` (exit 1); `doctor --json` reports `config.load` failing instead (its own exit code is 1 regardless, from auth/network checks, so grade on `config.load`) | PASS (parse under installed binary) |
 | V3 | `codex -c approval_policy=... doctor --json` | `approval policy` reads `Never` / `OnRequest`, so doctor reflects the policy value; the file's value equals the default, so doctor on the file alone cannot discriminate | PASS (key accepted); effect from file UNVERIFIED |
 | V4 | `codex sandbox -c approval_policy="on-request" -c sandbox_mode="workspace-write" -c sandbox_workspace_write.network_access=false …` in a scratch repo | new workspace file created; overwrite of existing `.codex\config.toml` denied (content unchanged); new `.git\hooks\pre-commit` not created; `curl.exe https://example.com` exit 7. Control with `network_access=true`: exit 35 (traffic leaves the sandbox; TLS then fails), so the flag changes behavior | PASS (values via `-c`, helper path) |
-| V5 | Same, with `CP_FAKE_SECRET_TOKEN` and `CP_PLAIN_VAR` set, `set CP_` | `ignore_default_excludes=false`: only `CP_PLAIN_VAR`; `=true`: both. The file's value filters secret-named variables | PASS |
+| V5 | Same, with `CP_FAKE_SECRET_TOKEN` and `CP_PLAIN_VAR` set, `set CP_` | `ignore_default_excludes=false`: only `CP_PLAIN_VAR`; `=true`: both. The file's value filters variables whose names contain `KEY`, `SECRET` or `TOKEN` only; names such as `*PASSWORD*` or `*CREDENTIAL*` and secrets embedded in values still pass (the reviewer saw `CP_PASSWORD` reach the command), so this is not a complete secret barrier | PASS |
 
 ## 3. Findings and limits
 
@@ -55,7 +55,6 @@ Run in PowerShell 7; the builder does not trust projects or answer prompts.
 | O-I | Trust `C:\TEST-repos\codex-prime` in the Codex TUI trust prompt, then run `codex` from the repo root and enter `/status` | approval `on-request`, sandbox `workspace-write`, network restricted, project config layer listed |
 | O-J | Same trusted session: ask Codex to create a file under `.codex-runtime/` and to edit `.codex/config.toml` | the first works (after creating the directory); the second is refused |
 | O-K | `/subagents` or a paid `codex exec` run that spawns more than 4 agents (needs user approval of spend) | at most 4 concurrent threads |
-| O-L | Remove nothing: this slice added no scratch trust entry | — |
 
 ## 5. Acceptance (P1-S03)
 

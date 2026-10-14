@@ -39,6 +39,13 @@ FORBIDDEN_TOP = {
 }
 
 
+def _same(a, b):
+    """Strict equality: same types (4.0 != 4, 0 != False), recursing into tables."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
+    return type(a) is type(b) and a == b
+
+
 def check(cfg):
     errs = []
     for key, why in FORBIDDEN_TOP.items():
@@ -56,7 +63,7 @@ def check(cfg):
         errs.append("writable_roots must not be set (protected paths stay read-only)")
     if "max_threads" in cfg.get("agents", {}):
         errs.append("agents.max_threads is a legacy alias; use max_concurrent_threads_per_session")
-    if cfg != EXPECTED:
+    if not _same(cfg, EXPECTED):
         errs.append("content differs from the approved baseline (unexpected, missing or changed keys)")
     return errs
 
@@ -81,7 +88,24 @@ def mutations(cfg):
         "legacy max_threads": m(lambda c: c["agents"].update(max_threads=4)),
         "unknown key": m(lambda c: c.update(task_classifier={"enabled": True})),
         "concurrency changed": m(lambda c: c["agents"].update(max_concurrent_threads_per_session=8)),
+        "concurrency float": m(lambda c: c["agents"].update(max_concurrent_threads_per_session=4.0)),
     }
+
+
+# Each mutation must trip its own named check, not only the generic baseline-equality check.
+EXPECTED_ERR = {
+    "approval untrusted": "retired/deprecated",
+    "approval on-failure": "retired/deprecated",
+    "sandbox danger-full-access": "danger-full-access",
+    "network true": "network_access",
+    "network key removed": "network_access",
+    "env excludes ignored": "ignore_default_excludes",
+    "env key removed": "ignore_default_excludes",
+    "writable_roots added": "writable_roots",
+    "profile alongside sandbox_mode": "default_permissions",
+    "mcp server added": "mcp_servers",
+    "legacy max_threads": "max_threads",
+}
 
 
 def codex_parse_check():
@@ -113,10 +137,15 @@ def main(argv):
     for e in errs:
         print("FAIL:", e)
     if "--self-test" in argv:
-        missed = [n for n, c in mutations(cfg).items() if not check(c)]
+        missed = []
+        for n, c in mutations(cfg).items():
+            found = check(c)
+            want = EXPECTED_ERR.get(n)
+            if not found or (want and not any(want in e for e in found)):
+                missed.append(n)
         for n in missed:
             print("SELF-TEST FAIL: mutation not detected:", n)
-        print(f"self-test: {len(mutations(cfg)) - len(missed)}/{len(mutations(cfg))} mutations detected")
+        print(f"self-test: {len(mutations(cfg)) - len(missed)}/{len(mutations(cfg))} mutations detected by the intended check")
         errs += missed
     print("PASS" if not errs else "FAILED")
     return 1 if errs else 0
