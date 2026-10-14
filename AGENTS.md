@@ -17,6 +17,7 @@ revert, stage, or commit changes you did not make, including untracked files.
 Pointers (read when relevant):
 - `.codex/knowledge/contracts.md`: the seven contracts (authority, task, delegation, change, execution, evidence, completion), each with observable expectations and what Codex does and does not enforce.
 - `.codex/knowledge/native-capabilities.md`: what Codex supports here; check before using a config key, hook field, or agent field.
+- `.codex/knowledge/task-classification.md`: intent types, the L0-L3 levels and the high-risk override. Classify by judgment; there is no score. Read it when the task is not obviously trivial.
 
 ## Scale the process to the task
 - Small, clear change: just do it and check it. No plan document, no agents, no full suite.
@@ -24,9 +25,9 @@ Pointers (read when relevant):
   scope, checks to run, unknowns). Use `/plan` if the user wants to review it first.
 - Security-sensitive, destructive, irreversible, data-migrating, or production-facing: treat as
   high risk whatever the size. Plan, analyze failure paths, and get an independent review before
-  reporting completion.
-Intent types, the L0-L3 levels and the high-risk override: `.codex/knowledge/task-classification.md`.
-Classify by judgment; there is no score. Read it when the task is not obviously trivial.
+  reporting completion. Prepare the change but do not run it against shared or production data
+  without authorization; report the unrun step, what is irreversible, the backup or rollback needed,
+  and the authorization required, with status `BLOCKED`.
 
 ## Skills and subagents
 Use a skill from `.agents/skills/` (if present) when its description matches the task. Delegate to subagents
@@ -48,7 +49,7 @@ Delegation packet and subagent statuses: contracts §3.
 Run the narrowest check that could catch a regression in what you changed, fix failures you
 caused, and rerun. Report a check as passing only if you ran it in this session. Explain
 failures that were already present rather than hiding them. Run the check even when the
-request did not ask for verification: a change whose check was skipped is `PARTIAL`, not `COMPLETE`. Details: contracts §6.
+request did not ask for verification: a change whose check was skipped or could not run is `PARTIAL` (`BLOCKED` when only an outside dependency stops it), not `COMPLETE`. Details: contracts §6.
 
 ## Done means
 The requested behavior works, relevant checks pass (or failures are explained), and the diff

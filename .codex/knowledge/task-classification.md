@@ -57,7 +57,7 @@ production-facing gets L3 controls however small the edit looks.
 - Prepare, do not perform: write the artifact, then report what was not run and the exact authorization
   or step that unblocks it. Status is `BLOCKED` (contracts §7) when the unblock needs the user.
 - Independent verification: a review of the diff by something other than the author (a subagent, `/review`
-  or the operator) before reporting `COMPLETE`. If none was available, say it was not done.
+  or the operator) before reporting `COMPLETE`. If none was available, say it was not done and do not report `COMPLETE`.
 - Do not ask for authorization for the safe, in-scope part of the work; do it.
 
 ## 4. Applying it
