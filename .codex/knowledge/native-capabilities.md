@@ -58,7 +58,7 @@ RUNTIME-TESTED.
 | 22 | Automatic approval review | yes | enum + `guardian_approval` enabled | no | paid session |
 | 23 | Goals and plan mode | yes | `goals` enabled | no | interactive TUI |
 | 24 | Hosted tools outside the sandbox | yes | `web_search` enum verified | no | |
-| 25 | Retired/deprecated settings | yes | **rejections observed** | **yes** (loader) | none present in loaded layers |
+| 25 | Retired/deprecated settings | yes | **rejections observed** | no (loader/syntax evidence only) | none present in loaded layers |
 
 ## 3. Official documentation used (source 2)
 
@@ -99,7 +99,7 @@ none of them starts a model turn.
 | B1 | `codex --version` | `codex-cli 0.162.1` |
 | B2 | `--help` for root, `exec`, `review`, `resume`, `fork`, `sandbox`, `debug`, `features`, `mcp`, `execpolicy check` | Flag inventories used in rows 10, 16, 17, 22 |
 | B3 | `codex features list` | 167 flags; used for stage/enabled facts |
-| B4 | `codex -c <key>=<poison> features list` (type-poisoning) | A **wrong-typed value is rejected only if the loader knows the key**; unknown keys are silently accepted (`-c bogus_key=1` exits 0). A rejection is therefore the evidence for INSTALLED. `--strict-config` is **not supported** by `features` ("`--strict-config` is not supported for `codex features`"). |
+| B4 | `codex -c <key>=<poison> features list` (type-poisoning) | A **wrong-typed value is rejected only if the loader knows the key**; unknown keys are silently accepted (`-c bogus_key=1` exits 0). A rejection is therefore evidence for INSTALLED **for top-level and non-`features` keys only**; under `features.*` any non-boolean value is rejected whether or not the flag exists (`features.totally_bogus_flag="x"` → "expected a boolean"), so B4 cannot prove a feature flag exists. Feature flags are evidenced by B3 (`codex features list`); the `features.codex_hooks` alias is evidenced by behavior: `-c features.codex_hooks=false` turns `hooks` to `false` in `features list`, while `-c features.totally_bogus_flag=false` leaves it `true`. `--strict-config` is **not supported** by `features` ("`--strict-config` is not supported for `codex features`"). |
 | B5 | `codex execpolicy check --rules <file>` against a scratch rules file | Rows 13, 25 |
 | B6 | `codex debug prompt-input` in a scratch Git repo (root and nested launch dirs) containing `AGENTS.md`, `sub/AGENTS.md`, `.agents/skills/demo-skill`, `.codex/agents/demo.toml` | Rows 2, 6, 8 |
 | B7 | `codex sandbox [-P <profile>] -- <cmd>` in the scratch repo | Rows 11, 19, 20, 21 |
@@ -120,12 +120,12 @@ error text the binary printed.
 | `sandbox_mode` | yes | `read-only`, `workspace-write`, `danger-full-access` |
 | `approvals_reviewer` | yes | `user`, `auto_review`, **`guardian_subagent`** (third value undocumented in D2/D4 excerpts read; do not use) |
 | `web_search` | yes | `disabled`, `cached`, `indexed`, `live` |
-| `default_permissions` | yes | needs a `[permissions]` table |
+| `default_permissions` | yes | `":workspace"` accepted with no table; an unknown name → "requires a `[permissions]` table" |
 | `permissions`, `hooks`, `projects`, `mcp_servers`, `otel`, `notify` | yes | table/sequence types |
 | `windows.sandbox` | yes | `elevated`, `unelevated`, `mxc` |
 | `project_doc_max_bytes`, `project_doc_fallback_filenames`, `model_auto_compact_token_limit`, `review_model` | yes | usize / sequence / i64 / string |
-| `features.hooks`, `.multi_agent`, `.goals`, `.shell_tool`, `.apps`, `.plugins`, `.memories`, `.request_permissions_tool`, `.guardian_approval`, `.prefer_mxc` | yes | boolean |
-| `features.codex_hooks` | yes (deprecated alias) | boolean |
+| `features.hooks`, `.multi_agent`, `.goals`, `.shell_tool`, `.apps`, `.plugins`, `.memories`, `.request_permissions_tool`, `.guardian_approval`, `.prefer_mxc` | **B3, not B4** (listed in `codex features list`) | boolean; B4 type errors here prove nothing |
+| `features.codex_hooks` | yes — live alias of `hooks` (alias behavior test above) | boolean |
 | `agents.enabled`, `.interrupt_message` | yes | boolean |
 | `agents.max_concurrent_threads_per_session`, `agents.max_threads` | yes | usize |
 | `agents.default_subagent_model`, `.default_subagent_reasoning_effort` | yes | string |
@@ -134,7 +134,9 @@ error text the binary printed.
 | `skills.max_context_tokens`, `.bundled.enabled`, `.include_instructions` | yes | nonzero usize / boolean |
 | `log_dir`, `auto_review.policy`, `model_reasoning_effort` | yes | path string / string / string |
 | `profile` | yes, **rejected** | "legacy `profile = ...` config is no longer supported; use `--profile`" |
-| `features.network_proxy`, `project_root_markers`, `tools.web_search.allowed_domains` | **inconclusive** | the probe accepted every poison value; do not claim INSTALLED from B4 alone |
+| `features.network_proxy` | yes | boolean or table ("data did not match any variant of untagged enum FeatureToml" for `"x"`/`1`) |
+| `project_root_markers` | yes | array of strings ("must be an array of strings") |
+| `tools.web_search.allowed_domains` | yes | typed ("did not match any variant of untagged enum WebSearchToolConfigInput"); an unrelated `tools.web_search.bogus=1` is accepted |
 
 ## 5. Capability entries
 
@@ -161,7 +163,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | states | DOCUMENTED; INSTALLED; INITIALIZED; RUNTIME-TESTED: **partial** |
 | syntax_verified | `project_doc_max_bytes`, `project_doc_fallback_filenames` recognized (B4) |
 | runtime_verified | **Partial (B6).** In an untrusted scratch repo: a root `AGENTS.md` sentinel appeared in the model-visible prompt when launched at the root; launching from `sub/dir` added `sub/AGENTS.md` as well. S01: from this repo's root, the `AGENTS.md` files in two ancestor directories above the repo were not injected. Not tested: `AGENTS.override.md`, fallback names, the 32 KiB cap, global file (none exists). |
-| limitations | Loaded only from the project root down to the launch directory, so a nested launch sees more files than a root launch. Project root is the Git root. Size cap `project_doc_max_bytes` (default 32 KiB per D6). Instruction loading did **not** require trust in the B6 scratch case; do not extend that to `.codex/` content. |
+| limitations | Loaded only from the project root down to the launch directory, so a nested launch sees more files than a root launch. Project root is typically the Git root (D6); `project_root_markers` can change it. Size cap `project_doc_max_bytes` (default 32 KiB per D6). Instruction loading did **not** require trust in the B6 scratch case; do not extend that to `.codex/` content. |
 | fallback | Keep the root `AGENTS.md` under the cap and self-contained; do not depend on nested files being loaded when launched from the root. |
 
 ### 3. Native built-in agents
@@ -171,7 +173,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | official_reference | D5 |
 | config_location | Built in: `default`, `worker`, `explorer`. A custom agent with the same name takes precedence. |
 | states | DOCUMENTED; INSTALLED (`multi_agent` stable, enabled — B3); INITIALIZED (enabled); RUNTIME-TESTED: no |
-| syntax_verified | `features.multi_agent`, `agents.enabled` recognized (B4) |
+| syntax_verified | `agents.enabled` recognized (B4); `multi_agent` is a listed flag (B3) |
 | runtime_verified | No. Needs a model session. |
 | limitations | Spawned only on a direct request or applicable `AGENTS.md`/skill instruction (D5). Subagents inherit the parent's sandbox and approvals. A `multi_agent_v2` flag exists (stable, off — B3); it is not described in the pages read, so it is not used. |
 | fallback | Single-agent sequential execution; `AGENTS.md` must state delegation is optional. |
@@ -182,8 +184,8 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | --- | --- |
 | official_reference | D5 |
 | config_location | `.codex/agents/*.toml` (project), `~/.codex/agents/` (user). Required: `name`, `description`, `developer_instructions`. Optional: `model`, `model_reasoning_effort`, `model_reasoning_summary`, `model_verbosity`, `features.shell_tool`/`apps`/`plugins`/`memories`/`request_permissions_tool = false`, `skills.config`, `skills.bundled.enabled`, `skills.include_instructions`. Name in the file is the identity. |
-| states | DOCUMENTED; INSTALLED (feature and skills keys recognized — B4); INITIALIZED: no agent file exists; RUNTIME-TESTED: no |
-| syntax_verified | Feature/skills keys per B4. No agent TOML was loaded by Codex: `debug prompt-input` does not list agents and the scratch project was untrusted. |
+| states | DOCUMENTED; INSTALLED (feature flags listed in B3; `skills.*` keys recognized — B4); INITIALIZED: no agent file exists; RUNTIME-TESTED: no |
+| syntax_verified | `skills.*` per B4; the `features.*` names are the B3 flag list. No agent TOML was loaded by Codex: `debug prompt-input` does not list agents and the scratch project was untrusted. |
 | runtime_verified | No. **BLOCKED: operator** (trust) plus a model session. |
 | limitations | A custom agent **cannot** override `sandbox_mode`, `approval_policy`, `model_provider`, or `mcp_servers`; those inherit the parent (D5). Instructions can ask an agent not to edit but do not create a read-only sandbox. Capability limiting is by feature flags only. Claude-style `.claude/agents/*.md` and `tools:` are not read. |
 | fallback | Express roles as skills plus `AGENTS.md` conventions; enforce read-only roles through the parent's sandbox/profile, not through agent text. |
@@ -209,7 +211,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | states | DOCUMENTED; INSTALLED; INITIALIZED; RUNTIME-TESTED: **yes** |
 | syntax_verified | `skills.*` keys recognized (B4) |
 | runtime_verified | **Yes (B6).** `demo-skill` with a sentinel description appeared, with its description, in the model-visible prompt from the scratch repo root **and** from a nested launch directory; the scratch repo was untrusted, so repo-skill discovery did not need project trust there. S01: this host already lists 47 skills (43 user, 4 system) at the repo root, none with BLUEPRINT §3.3 names. |
-| limitations | Skill names collide across scopes without merging, so user-level names can shadow or sit beside project names. The initial list is budgeted (about 2% of context or 8,000 characters; `skills.max_context_tokens` up to 10,000, D8) and may drop skills with a warning. Changes are auto-detected; restart if not. |
+| limitations | Skill names collide across scopes without merging, so a user-level and a project skill with the same name can both appear in selectors (D8). The initial list is budgeted (about 2% of context or 8,000 characters; `skills.max_context_tokens` up to 10,000, D8) and may drop skills with a warning. Changes are auto-detected; restart if not. |
 | fallback | Keep skill `description`s short and front-loaded; reference skills by exact name in `AGENTS.md`; run the collision check from BLUEPRINT §3.6 before claiming a name is unique. |
 
 ### 7. Explicit skill invocation
@@ -218,7 +220,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | --- | --- |
 | official_reference | D8, D10 |
 | config_location | Prompt text `$skill-name`, or `/skills` in the interactive CLI |
-| states | DOCUMENTED; INSTALLED: `/skills` listed in D10; UNVERIFIED in the binary; RUNTIME-TESTED: no |
+| states | DOCUMENTED; binary support UNVERIFIED (`/skills` is only listed in D10); RUNTIME-TESTED: no |
 | syntax_verified | n/a |
 | runtime_verified | No. Interactive TUI. **BLOCKED: operator** |
 | limitations | `agents/openai.yaml` with `policy.allow_implicit_invocation: false` removed the skill from the model-visible skill list in B6, so such a skill is reachable only if explicit `$name` invocation still works for it; D8 says it does, and that is **unverified here**. |
@@ -242,7 +244,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | --- | --- |
 | official_reference | D10 (`/plan`), D1 (`update_plan` visible to hooks), D9 (plan updates in `--json` items) |
 | config_location | Interactive `/plan [prompt]`; unavailable while Codex is already working |
-| states | DOCUMENTED; INSTALLED: assumed from docs only; RUNTIME-TESTED: no |
+| states | DOCUMENTED; binary support UNVERIFIED (docs only); RUNTIME-TESTED: no |
 | syntax_verified | n/a |
 | runtime_verified | No. **BLOCKED: operator** (TUI). Whether `codex exec` can enter plan mode is undocumented in the pages read. |
 | limitations | The binary reports a `collaboration_modes` flag as "removed"; the docs still document `/plan`. Treat plan mode as UI behavior, not a configurable contract. |
@@ -269,7 +271,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | states | DOCUMENTED; INSTALLED; INITIALIZED; RUNTIME-TESTED: **yes** (helper, not a model session) |
 | syntax_verified | Enum values confirmed by the binary's error text (B4) |
 | runtime_verified | **Yes (B7).** Native Windows `codex sandbox`: default and `:workspace` profile run commands; `:workspace` can write a workspace file; `:read-only` cannot write; writes to protected directories are denied (row 19); outbound HTTP is blocked (row 20). The `[windows] sandbox` value in user config was not read, so which implementation ran is not recorded. MXC: **ENV-LIMITED** — `native MXC is unavailable on this executor` (B9); D12 requires Windows 11 build 26100.9278 or later and this host is 22631. |
-| limitations | `codex sandbox` here takes the command directly with an optional `-P/--permission-profile`; the `linux`/`macos`/`windows` subcommands in BLUEPRINT §0.2 and D2 do not exist on this Windows build (S01). Sandbox probes exercised the permission-profile path, not `sandbox_mode = "workspace-write"` from a config file. |
+| limitations | `codex sandbox` here takes the command directly with an optional `-P/--permission-profile`; the `linux`/`macos`/`windows` subcommands in BLUEPRINT §0.2 and D2 do not exist on this Windows build (S01), and D12's `codex sandbox setup --elevated …` is absent: `codex sandbox --help` lists only `uninstall`. D2/D12 call `elevated` and `unelevated` legacy fallbacks. Sandbox probes exercised the permission-profile path, not `sandbox_mode = "workspace-write"` from a config file. |
 | fallback | Run `codex exec --sandbox read-only` unless writes are required; never choose `danger-full-access` without operator approval. |
 
 ### 12. Approval policies
@@ -281,7 +283,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | states | DOCUMENTED; INSTALLED; INITIALIZED; RUNTIME-TESTED: no |
 | syntax_verified | Enum from binary: `untrusted` (rejected), `on-failure`, `on-request`, `granular`, `never` (B4) |
 | runtime_verified | No. |
-| limitations | **`codex exec` has no `-a/--ask-for-approval` flag** (B2; `codex exec -a never` → "unexpected argument"), contradicting the `CLAUDE.md` runtime-verification instruction. The documented routes are `-c approval_policy="..."` (accepted by the loader; effect unverified) and `--approve-for-me`. In non-interactive runs, an action needing approval fails (D5). A `granular` policy is documented (D2) but its table shape was not parse-tested. |
+| limitations | **`codex exec` has no `-a/--ask-for-approval` flag** (B2; `codex exec -a never` → "unexpected argument"), contradicting the `CLAUDE.md` runtime-verification instruction. The documented routes are `-c approval_policy="..."` (accepted by the loader; effect unverified) and `--approve-for-me`, which routes approvals through automatic review **using the workspace-write sandbox** (it also selects a sandbox; not a read-only option). In non-interactive runs, an action needing approval fails (D5). A `granular` policy is documented (D2) but its table shape was not parse-tested. |
 | fallback | Set the policy with `-c approval_policy=...` and confirm it from the `--json` event stream (thread/turn items) before trusting it; default to the most restrictive sandbox so approvals are rarely needed. |
 
 ### 13. Execution rules
@@ -293,7 +295,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | states | DOCUMENTED; INSTALLED (`codex execpolicy check`, "preview"); RUNTIME-TESTED: **yes** (offline) |
 | syntax_verified | **Yes (B5).** Valid file parsed; `decision="ask"` rejected as a Starlark error; a `match` example that no rule matches fails the load ("unmatched examples"). |
 | runtime_verified | Offline checker only. Exact-prefix commands match (`git push origin main` → `prompt`; `git status` → `allow`). Multiple files/rules: strictest wins (`allow` + `prompt` + `forbidden` → `forbidden`). **Not matched by the offline checker:** `git -C . push …`, `git --no-pager push …`, `bash -lc "git push …"`, `bash -lc "git status && rm -rf …"`, `pwsh -Command …`, `powershell.exe -Command …`, `cmd.exe /c …` — each returned `{"matchedRules":[]}`. D7 says Codex splits simple `bash -lc` chains at runtime and evaluates each command; the offline checker does **not** do that, so splitting is **UNVERIFIED** here. |
-| limitations | Rules are literal argv-prefix matches, so reordered global options (`git -C`) evade them; unmatched commands fall through to normal approval/sandbox. PowerShell and `cmd` wrappers are not documented as split. Rules apply only to commands Codex would run **outside** the sandbox. The user's `default.rules` is 59 allow-only entries (S01) and applies in addition to any project rules. `--ignore-rules` disables them (operator-only for this project). |
+| limitations | D7 marks rules "experimental and may change". Rules are literal argv-prefix matches, so reordered global options (`git -C`) evade them; unmatched commands fall through to normal approval/sandbox. PowerShell and `cmd` wrappers are not documented as split. Rules apply only to commands Codex would run **outside** the sandbox. The user's `default.rules` is 59 allow-only entries (S01) and applies in addition to any project rules. `--ignore-rules` disables them (operator-only for this project). |
 | fallback | Enumerate each dangerous argv form as its own rule (include `git -C`, `git -c`, `--no-pager` variants), add a `PreToolUse` hook as a second layer, and rely on the sandbox for containment. CLAUDE.md's "reordered and shell-wrapped" test requirement cannot be fully met with `execpolicy check` alone; wrapper behavior needs a runtime test (**BLOCKED: operator / paid session**). |
 
 ### 14. Hooks and event payloads
@@ -302,10 +304,10 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | --- | --- |
 | official_reference | D1 |
 | config_location | `hooks.json` or inline `[hooks]` next to an active layer (`~/.codex/`, `<repo>/.codex/`); pick one per layer. Project hooks load only for a trusted project; non-managed hooks must be reviewed in `/hooks` and are keyed to a hash. |
-| states | DOCUMENTED; INSTALLED (`hooks` stable, enabled — B3; `hooks` table recognized — B4); INITIALIZED: no hooks defined; RUNTIME-TESTED: no |
+| states | DOCUMENTED; INSTALLED (`hooks` stable, enabled — B3; `hooks` table recognized — B4; `features.codex_hooks` alias behavior test); INITIALIZED: no hooks defined; RUNTIME-TESTED: no |
 | syntax_verified | Only the table type (B4). No `hooks.json` was parsed by Codex. |
 | runtime_verified | No. **BLOCKED: operator** (project trust, `/hooks` review). |
-| limitations | Events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`. Handlers: `command` and `mcp_tool` run; `prompt`/`agent` are parsed and skipped. Matchers are regexes on tool name/source/trigger; `UserPromptSubmit`, `Stop`, `Interrupt` ignore `matcher`. **Blocking contract** for `PreToolUse`: `hookSpecificOutput.permissionDecision = "deny"` with a reason, the older `decision:"block"`, or exit code 2 with a stderr reason. `permissionDecision:"ask"`, `continue`, `stopReason`, `suppressOutput` are unsupported there: the hook run fails **and the tool call proceeds**. `PermissionRequest` allow/deny shape differs and must not return `updatedInput`/`updatedPermissions`/`interrupt`. Hook errors, timeouts, and malformed output do not block. Hosted tools (for example `WebSearch`) are not covered; D1 calls tool hooks "a useful guardrail, not a complete enforcement boundary". Default timeout 600 s (`SessionEnd`/`Interrupt` 1 s, max 3 s). Windows override: `commandWindows` (`command_windows` in TOML). Plugin-bundled hooks also need trust. Large `additionalContext` spills to a temp-dir file. |
+| limitations | Events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`. Handlers: `command` and `mcp_tool` run; `prompt`/`agent` are parsed and skipped. Matchers are regexes on tool name/source/trigger; `UserPromptSubmit`, `Stop`, `Interrupt` ignore `matcher`. **Blocking contract** for `PreToolUse`: `hookSpecificOutput.permissionDecision = "deny"` with a reason, the older `decision:"block"`, or exit code 2 with a stderr reason. `permissionDecision:"ask"`, legacy `decision:"approve"`, `continue`, `stopReason`, `suppressOutput` are unsupported there (`permissionDecision:"allow"` with `updatedInput` rewrites the call and is supported): the hook run fails **and the tool call proceeds**. `PermissionRequest` allow/deny shape differs and must not return `updatedInput`/`updatedPermissions`/`interrupt`. D1 states that an unsupported `PreToolUse` field marks the run failed and continues the tool call, and that MCP-hook errors do not block; that command-hook errors, timeouts and malformed output also fail open is an inference from CLAUDE.md, not a D1 quote. Hosted tools (for example `WebSearch`) are not covered; D1 calls tool hooks "a useful guardrail, not a complete enforcement boundary". Default timeout 600 s (`SessionEnd`/`Interrupt` 1 s, max 3 s). Windows override: `commandWindows` (`command_windows` in TOML). Plugin-bundled hooks also need trust. Large `additionalContext` spills to a temp-dir file. |
 | fallback | Treat hooks as advisory; keep deny logic in `execpolicy` rules and the sandbox. Blocking hooks must return exit 2 on their own internal errors (CLAUDE.md). Use `command` handlers only. |
 
 ### 15. Context compaction
@@ -325,7 +327,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | Field | Value |
 | --- | --- |
 | official_reference | D9, D10 |
-| config_location | `codex exec [OPTIONS] [PROMPT]`; stdin as prompt with `-`; `--json`, `-o/--output-last-message`, `--output-schema`, `--ephemeral`, `--sandbox`, `--approve-for-me`, `--ignore-user-config`, `--ignore-rules`, `--skip-git-repo-check`, `-C`, `--add-dir`, `--color` |
+| config_location | `codex exec [OPTIONS] [PROMPT]`; stdin as prompt with `-`; `--json`, `-o/--output-last-message`, `--output-schema`, `--ephemeral`, `--sandbox`, `--approve-for-me` (implies the workspace-write sandbox), `--ignore-user-config`, `--ignore-rules`, `--skip-git-repo-check`, `-C`, `--add-dir`, `--color` |
 | states | DOCUMENTED; INSTALLED (B2); INITIALIZED; RUNTIME-TESTED: no |
 | syntax_verified | Flags from help; `--full-auto` → "unexpected argument" (UNSUPPORTED) |
 | runtime_verified | No. Every `exec` run is a paid model session; none was run. The JSONL event schema (`thread.started`, `turn.started`, `turn.completed`, `turn.failed`, `item.*`, `error`) is DOCUMENTED, not observed. |
@@ -341,7 +343,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | states | DOCUMENTED; INSTALLED (B2); RUNTIME-TESTED: no |
 | syntax_verified | `tui.resume_cwd` recognized: `current` \| `session` (B4) |
 | runtime_verified | No. Needs a saved session, which means a model session. |
-| limitations | `--last` is scoped to the current working directory unless `--all`; resume does not accept `--worktree`; `--ephemeral` runs persist nothing to resume. `resume`/`fork` interactive commands also accept `-a on-request\|never`, unlike `exec`. |
+| limitations | `--last` is scoped to the current working directory unless `--all`; D10 says resume does not accept `--worktree`, but `resume --help` lists the flag (conflict C9, runtime UNVERIFIED); `--ephemeral` runs persist nothing to resume. `resume`/`fork` interactive commands also accept `-a on-request\|never`, unlike `exec`. |
 | fallback | Persist task state in `.codex-runtime/` files so a fresh session can continue without session resume. |
 
 ### 18. Windows and WSL behavior
@@ -351,7 +353,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | official_reference | D2, D12, D13 |
 | config_location | `[windows] sandbox`, `features.prefer_mxc`, `/setup-default-sandbox`; WSL2 uses the Linux sandbox (bubblewrap) |
 | states | DOCUMENTED; INSTALLED; RUNTIME-TESTED: **partial** |
-| syntax_verified | `windows.sandbox` domain `elevated`/`unelevated`/`mxc`; `features.prefer_mxc` recognized (its stage in B3 is "under development") |
+| syntax_verified | `windows.sandbox` domain `elevated`/`unelevated`/`mxc`; `features.prefer_mxc` is a listed flag (B3: "under development") |
 | runtime_verified | Native Windows sandbox helper: observed (rows 11, 19, 20). MXC: unavailable (B9, **ENV-LIMITED**, build 22631). WSL: distros `Ubuntu` and `docker-desktop` exist (S01); whether Codex is installed or the bubblewrap sandbox works inside WSL is **UNVERIFIED** (S01 U7); a bare `bash` on this host's PATH is the WSL launcher, not Git Bash (S01). |
 | limitations | WSL1 is unsupported from Codex 0.115 (D2, D13). Docs advise keeping WSL repositories under the Linux home, not `/mnt/c`. In Git Bash, MSYS path conversion rewrites `cmd.exe /d /c …` arguments, so Windows-sandbox probes must run from PowerShell (observed: the command did not execute from Git Bash). Hook scripts need Windows-safe commands (`commandWindows`). `unelevated` has weaker network isolation and no denied-read support (D12). |
 | fallback | Develop and test natively on Windows with PowerShell; treat WSL as an unverified alternative until the operator runs a WSL probe. |
@@ -375,7 +377,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | official_reference | D2, D11 |
 | config_location | `[sandbox_workspace_write] network_access`; `[features.network_proxy] enabled/domains/…` or `features.network_proxy = true`; profile `network.enabled` + `network.domains` |
 | states | DOCUMENTED; INSTALLED (`network_proxy` experimental, **off** — B3; `sandbox_workspace_write.network_access` recognized — B4); RUNTIME-TESTED: **partial** |
-| syntax_verified | `network_access` boolean verified; the `features.network_proxy` key was **inconclusive** in B4 |
+| syntax_verified | `network_access` boolean verified; the `features.network_proxy` is typed boolean-or-table (B4) |
 | runtime_verified | **Network off observed (B7):** `Invoke-WebRequest https://example.com` inside `codex sandbox` (default and `:workspace`) failed to connect, while the same call outside the sandbox returned HTTP 200. Enabling network, and the proxy's domain allow/deny, were **not** tested. |
 | limitations | Domain rules do nothing unless command network is on **and** the proxy is on; proxy on with network off changes nothing (D2). Network-on + proxy-off means unrestricted direct egress. The proxy filters only sandboxed commands (row 24). |
 | fallback | Keep network off. If a phase needs it, enable it explicitly with a narrow allowlist and proxy, and record the operator's approval. |
@@ -411,7 +413,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | official_reference | D10, D3 (`goals` flag) |
 | config_location | `/goal <objective>` (view, `edit`, `pause`, `resume`, `clear`; ≤ 4,000 chars), `/plan`; `features.goals` |
 | states | DOCUMENTED; INSTALLED (`goals` stable, enabled — B3); INITIALIZED; RUNTIME-TESTED: no |
-| syntax_verified | `features.goals` recognized (B4) |
+| syntax_verified | `goals` is a listed flag (B3) |
 | runtime_verified | No. Interactive TUI. **BLOCKED: operator** |
 | limitations | Whether goals or plan mode work under `codex exec` is not documented in the pages read. |
 | fallback | Record the goal as the first line of the task prompt and in a `.codex-runtime/` file. |
@@ -425,7 +427,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | states | DOCUMENTED; INSTALLED (`web_search` enum — B4; `browser_use`, `computer_use`, `apps` stable and enabled — B3); RUNTIME-TESTED: no |
 | syntax_verified | `web_search` domain confirmed; `mcp_servers` table recognized |
 | runtime_verified | No. `codex mcp list` → no servers (B8). |
-| limitations | Not filtered by the sandbox network proxy and not visible to `PreToolUse`/`PostToolUse` (D1, D2, D11). Default `web_search` is `cached`; it becomes `live` under full-access sandbox settings (D3). `tools.web_search.allowed_domains` filters results, not command egress (D11); its key was inconclusive in B4. |
+| limitations | **Hook visibility differs by surface (D1 "Tool coverage")**: hosted tools such as `WebSearch` are *not* seen by `PreToolUse`/`PostToolUse`; MCP tools *are* (matchable as `mcp__<server>__<tool>`). **Proxy**: none of web search, apps/connectors, MCP, or browser/Computer Use traffic is filtered by the sandbox network proxy (D2, D11). Default `web_search` is `cached`; it becomes `live` under full-access sandbox settings (D3). `tools.web_search.allowed_domains` filters results, not command egress (D11); the key is recognized (B4). |
 | fallback | Set `web_search = "disabled"` in launch flags when a task must not reach external content; the delivered `.codex/` carries no MCP servers (CLAUDE.md). |
 
 ### 25. Retired or deprecated settings
@@ -443,12 +445,12 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | Setting | Binary result (0.162.1) | Docs / blueprint | Status |
 | --- | --- | --- | --- |
 | `approval_policy = "untrusted"` | **Rejected at load**: `approval_policy = "untrusted" is no longer supported; remove this setting`, exit 1 | D2: retired, can prevent startup | UNSUPPORTED (verified) |
-| `approval_policy = "on-failure"` | Accepted; no message observed | Not mentioned in D2/D3/D4 excerpts read; BLUEPRINT §0.3 and CLAUDE.md call it deprecated | INITIALIZED; deprecation **UNVERIFIED** here — do not write it |
+| `approval_policy = "on-failure"` | Accepted; no warning observed | D4 (`approval_policy` description): "`on-failure` is deprecated; use `on-request` … or `never`" | DOCUMENTED deprecated; loader still accepts it silently — do not write it |
 | `--full-auto` | `error: unexpected argument '--full-auto' found` on `exec` and root | D9: no longer supported | UNSUPPORTED (verified) |
 | `features.codex_hooks` | Recognized boolean; absent from `codex features list` | D1: deprecated alias of `features.hooks` | Accepted, no warning observed; write `features.hooks` |
 | `agents.max_threads` | Recognized usize | D5/D4: legacy alias of `agents.max_concurrent_threads_per_session` | Accepted, no warning observed; write the new name |
 | `profile = "<name>"` in config | **Rejected**: use `--profile <name>` with `<name>.config.toml` | D4: `profile` ignored in project config | UNSUPPORTED as a config key (verified); beyond blueprint list |
-| `web_search_cached`, `web_search_request` features | Listed "deprecated" | D3: deprecated | Do not use |
+| `features.web_search`, `web_search_cached`, `web_search_request` | `web_search_cached`/`_request` listed "deprecated" (B3) | D3: all three deprecated; use top-level `web_search` | Do not use |
 | `use_legacy_landlock`, `transcript_v2` features | Listed "deprecated" | D11: disable `use_legacy_landlock` | Do not use |
 
 Loaded layers checked: the user `config.toml` (token counts only: `untrusted`, `on-failure`, `codex_hooks`,
@@ -465,10 +467,13 @@ Recorded per `CLAUDE.md`; none is resolved silently.
 | C2 | CLAUDE.md: run `codex exec` with `--ask-for-approval` | `exec --help` has no such flag; `-a` → "unexpected argument" (B2) | Use `-c approval_policy=...` and verify from events |
 | C3 | BLUEPRINT §0.3 #21: profiles "must not be combined with `sandbox_mode`" | Loader accepts both; D11 says `sandbox_mode` silently wins | Enforce in our own validator |
 | C4 | CLAUDE.md: test rules for "reordered and shell-wrapped forms" with `codex execpolicy check` | Offline check does not match `git -C …` or any shell wrapper (B5) | Wrapper behavior needs a runtime test |
-| C5 | BLUEPRINT §0.3 #25: `approval_policy = "on-failure"` deprecated | Binary accepts it; not found in docs pages read | Label UNVERIFIED |
+| C5 | BLUEPRINT §0.3 #25: `approval_policy = "on-failure"` deprecated | D4 agrees; the binary still accepts it with no warning | No conflict on status; a deprecated value will not fail at load, so a static check is needed |
 | C6 | Docs: `approvals_reviewer` = `user\|auto_review` | Binary also accepts `guardian_subagent` | Undocumented value; do not use |
 | C7 | D12/D4 treat `features.prefer_mxc` as a config key | Binary lists it as "under development", default off | Documented but not a stable feature in 0.162.1 |
-| C8 | BLUEPRINT §0.2: Codex pages under developers.openai.com | Current pages are on `learn.chatgpt.com/docs/` | Cite the live host |
+| C8 | BLUEPRINT §0.3 #24: MCP is "not visible to `PreToolUse`/`PostToolUse`" | D1 "Tool coverage": MCP tools are covered (Yes/Yes); only hosted tools such as `WebSearch` are not | Treat MCP as hook-visible but proxy-unfiltered |
+| C9 | D10: `resume`/`review` cannot be combined with `--worktree` | `codex resume --help`, `exec resume`, `exec review` list `--worktree` (B2) | Help lists the flag, docs forbid it; runtime rejection UNVERIFIED (would start a session) |
+
+Note: Codex docs live on `learn.chatgpt.com/docs/` (BLUEPRINT v1.1 already says so); cite that host.
 
 ## 7. Operator-only and blocked checks
 
@@ -487,7 +492,7 @@ Recorded per `CLAUDE.md`; none is resolved silently.
 
 ## 8. Other limitations of this matrix
 
-- B4 proves a key **exists and is typed**; it does not prove semantics. Behavior rows rely on D* until a runtime probe exists.
+- B4 proves a non-`features` key **exists and is typed** (feature flags: B3); it does not prove semantics. Behavior rows rely on D* until a runtime probe exists.
 - B6/B7 ran in an **untrusted** scratch repo and through `codex sandbox`; trusted-project behavior and model-session behavior are not observed.
 - D4, D10, D12, D14, D15 were searched, not read in full; claims from them are limited to the passages quoted above.
 - `debug prompt-input` output is a rendered prompt and is not a stable interface.
