@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / ".codex" / "knowledge" / "contracts.md"
 VERIFY = ROOT / ".codex" / "knowledge" / "contracts-verification.md"
 MATRIX = ROOT / ".codex" / "knowledge" / "native-capabilities.md"
+CFGVERIFY = ROOT / ".codex" / "knowledge" / "config-baseline-verification.md"
+CONFIG = ROOT / ".codex" / "config.toml"
 AGENTS = ROOT / "AGENTS.md"
 
 SECTIONS = [  # (heading name, expectation prefix)
@@ -65,7 +67,7 @@ def bullets(body):
     return [" ".join(b) for b in out]
 
 
-def check_contracts(text, matrix, root_exists):
+def check_contracts(text, matrix, cfgverify, config, root_exists):
     errs = []
     secs, order = sections(text)
     want = [(i + 1, n) for i, (n, _) in enumerate(SECTIONS)]
@@ -89,6 +91,9 @@ def check_contracts(text, matrix, root_exists):
         for b in bullets(enf):
             if re.search(r"`NATIVE(-PARTIAL)?`", b) and not re.search(r"\bNC\d+\b|\bV\d+\b", b):
                 errs.append(f"{name}: NATIVE claim without NC<n>/V<n> citation: {b[:70]}...")
+            for v in re.findall(r"\bV(\d+)\b", b):
+                if f"| V{v} |" not in cfgverify:
+                    errs.append(f"{name}: V{v} cited but config-baseline-verification.md has no row V{v}")
         exp_ids = []
         for m in EXP_ROW.finditer(body.split("**Expectations**")[-1]):
             eid, chans = m.group(1), {c.strip() for c in m.group(2).split(",")}
@@ -129,6 +134,10 @@ def check_contracts(text, matrix, root_exists):
         errs.append(f"over-claim wording {m.group(0)!r}: state the condition and the gap instead")
     if re.search(r"claude", text, re.I):
         errs.append("contracts.md must not reference Claude (no builder dependency in the delivered system)")
+    if re.search(r"^\[hooks", config, re.M) or re.search(r"^hooks\s*=", config, re.M):
+        errs.append("config.toml defines hooks but contracts.md says hooks are not delivered: update the contracts and labels")
+    if "any active layer" not in text:
+        errs.append("contracts.md must state that rules from any active layer (including user rules) also apply")
     for rel, what in NOT_DELIVERED:
         if root_exists(rel):
             errs.append(f"{rel} exists but contracts.md says {what} are not delivered: update the contracts and labels")
@@ -184,7 +193,7 @@ def check_scenarios(vtext, contracts):
 
 
 def run_all(t, root_exists):
-    return (check_contracts(t["contracts"], t["matrix"], root_exists)
+    return (check_contracts(t["contracts"], t["matrix"], t["cfgverify"], t["config"], root_exists)
             + check_agents(t["agents"]) + check_scenarios(t["verify"], t["contracts"]))
 
 
@@ -224,6 +233,9 @@ def mutations(t):
         "all scenarios of one class removed": lambda d: {**d, "verify": re.sub(r"^\| S\d+ \| destructive \|.*\n", "", d["verify"], flags=re.M)},
         "all CANCELLED scenarios removed": lambda d: {**d, "verify": re.sub(r"^\| S\d+ \|.*`CANCELLED` \|\n", "", d["verify"], flags=re.M)},
         "coverage gap": lambda d: {**d, "verify": re.sub(r"EXEC-4,?\s*", "", d["verify"])},
+        "unknown V citation": sub("contracts", "`config-baseline-verification.md` V5", "`config-baseline-verification.md` V99"),
+        "inline hooks table": lambda d: {**d, "config": d["config"] + "\n[hooks]\n"},
+        "active-layer caveat removed": sub("contracts", "any active layer", "the project layer"),
     }
 
 
@@ -243,6 +255,8 @@ EXPECTED_ERR = {
     "all scenarios of one class removed": "no scenario of class",
     "all CANCELLED scenarios removed": "no scenario ends in CANCELLED",
     "coverage gap": "exercised by no scenario",
+    "unknown V citation": "V99 cited", "inline hooks table": "defines hooks",
+    "active-layer caveat removed": "any active layer",
 }
 
 
@@ -264,7 +278,8 @@ def codex_prompt_check():
 def main(argv):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     t = {"contracts": CONTRACTS.read_text(encoding="utf-8"), "verify": VERIFY.read_text(encoding="utf-8"),
-         "matrix": MATRIX.read_text(encoding="utf-8"), "agents": AGENTS.read_text(encoding="utf-8")}
+         "matrix": MATRIX.read_text(encoding="utf-8"), "agents": AGENTS.read_text(encoding="utf-8"),
+         "cfgverify": CFGVERIFY.read_text(encoding="utf-8"), "config": CONFIG.read_text(encoding="utf-8")}
     exists = lambda rel: (ROOT / rel).exists()
     errs = run_all(t, exists)
     if "--codex" in argv:
