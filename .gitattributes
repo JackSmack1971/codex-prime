@@ -1,0 +1,3 @@
+# Hook scripts and execution rules keep LF endings across platforms (BLUEPRINT.md section 4.6)
+*.py text eol=lf
+*.rules text eol=lf
