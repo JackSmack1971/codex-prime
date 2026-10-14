@@ -1,0 +1,16 @@
+# CODEX PRIME project baseline (BLUEPRINT.md §1.2). Loads only after the operator trusts the project.
+# Sandbox model: legacy sandbox_mode. Do not add default_permissions or [permissions.*] here; with
+# sandbox_mode present Codex silently ignores permission profiles.
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false
+
+[shell_environment_policy]
+# Default is true, which passes *KEY*/*SECRET*/*TOKEN* variables to commands. false applies the automatic exclusions.
+ignore_default_excludes = false
+
+[agents]
+max_concurrent_threads_per_session = 4
