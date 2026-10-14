@@ -72,7 +72,7 @@ be true. They are the test surface for `contracts-verification.md`.
 **Enforcement**
 - Rules 1–3: `GUIDANCE`. Codex has no native mechanism that separates instructions from data.
 - Rule 4: `NATIVE-PARTIAL`. Under `workspace-write`, `.codex/`, `.agents/` and `.git/` writes are denied
-  (NC19, helper-observed) and out-of-sandbox commands go through the approval policy (NC12). User-level config
+  (NC19, helper-observed) and out-of-sandbox commands go through the approval policy unless an active rule allows them (NC12, section 0). User-level config
   and flags are outside the sandboxed workspace; avoiding them is `GUIDANCE`.
 - Rule 5: `NATIVE-PARTIAL`. The `web_search` mode is native config. Hosted web search is not visible to
   hooks and is not filtered by the sandbox network proxy (NC24), so injected page content is not stopped natively.
