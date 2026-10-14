@@ -130,6 +130,7 @@ error text the binary printed.
 | `agents.max_concurrent_threads_per_session`, `agents.max_threads` | yes | usize |
 | `agents.default_subagent_model`, `.default_subagent_reasoning_effort` | yes | string |
 | `sandbox_workspace_write.network_access`, `allow_login_shell` | yes | boolean |
+| `shell_environment_policy.ignore_default_excludes` | yes (P1-S03) | boolean; `"x"` → `failed to load bootstrap configuration`, `false` accepted. D3/D4: default **true** (no automatic `*KEY*`/`*SECRET*`/`*TOKEN*` filtering); `false` applies it |
 | `history.persistence`, `shell_environment_policy.inherit`, `tui.resume_cwd` | yes | `save-all`/`none`; `core`/`all`/`none`; `current`/`session` |
 | `skills.max_context_tokens`, `.bundled.enabled`, `.include_instructions` | yes | nonzero usize / boolean |
 | `log_dir`, `auto_review.policy`, `model_reasoning_effort` | yes | path string / string / string |
