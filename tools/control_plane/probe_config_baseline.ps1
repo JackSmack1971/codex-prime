@@ -107,6 +107,7 @@ try {
     "protected files modified (content check, expect none): $(if ($bad) { $bad -join ', ' } else { 'none' })"
   }
   Run-Rows 'profile' $true @();                                         Guarded-State
+  Remove-Item -Force normal.txt -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force .codex-runtime -ErrorAction SilentlyContinue
   Run-Rows 'sandbox_mode' $false @('-c', 'sandbox_mode="workspace-write"'); Guarded-State
   $null = Sbx ':workspace' 'del .codex\config.toml'
   "del of protected .codex\config.toml: exit=$LASTEXITCODE file still present=$(Test-Path .codex\config.toml)  (grade on file state, not exit code)"
@@ -123,5 +124,5 @@ try {
 }
 finally {
   Set-Location $(if ($repoRoot) { $repoRoot } else { $env:TEMP })
-  if ($c -and (Test-Path $c) -and $c.StartsWith($env:TEMP)) { Remove-Item -Recurse -Force $c -ErrorAction SilentlyContinue }
+  if ($c -and (Test-Path $c) -and $c.StartsWith($env:TEMP)) { Remove-Item -Recurse -Force $c -ErrorAction SilentlyContinue; if (Test-Path $c) { "WARNING: scratch dir not removed: $c" } }
 }

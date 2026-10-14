@@ -472,6 +472,7 @@ Recorded per `CLAUDE.md`; none is resolved silently.
 | C7 | D12/D4 treat `features.prefer_mxc` as a config key | Binary lists it as "under development", default off | Documented but not a stable feature in 0.162.1 |
 | C8 | BLUEPRINT §0.3 #24: MCP is "not visible to `PreToolUse`/`PostToolUse`" | D1 "Tool coverage": MCP tools are covered (Yes/Yes); only hosted tools such as `WebSearch` are not | Treat MCP as hook-visible but proxy-unfiltered |
 | C9 | D10: `resume`/`review` cannot be combined with `--worktree` | `codex resume --help`, `exec resume`, `exec review` list `--worktree` (B2) | Help lists the flag, docs forbid it; runtime rejection UNVERIFIED (would start a session) |
+| C10 | CLAUDE.md: run `codex exec` with an explicit `--ask-for-approval` | `codex exec -a never` is rejected (`unexpected argument`); the top-level `codex -a never exec --help` parses (P0-S03 review), but whether `exec` honors the top-level flag is UNVERIFIED | Use `-c 'approval_policy="never"'` and grade from `--json` events; refines C2 |
 
 Note: Codex docs live on `learn.chatgpt.com/docs/` (BLUEPRINT v1.1 already says so); cite that host.
 

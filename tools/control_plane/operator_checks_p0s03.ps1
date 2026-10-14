@@ -55,7 +55,7 @@ Record each result as: PASS / FAIL / BLOCKED: operator, with the command and the
     "   $((codex features list | Select-String '^goals').Line -replace '\s+', ' ')"
     "V5 custom agent visibility needs a model session (paid): NOT run here. Planned, operator-approved run only:"
     "   cd '$root'; codex exec --sandbox read-only -c 'approval_policy=`"never`"' --json 'Spawn the agent named demo_agent and report its reply.'"
-    "   (codex exec has no --ask-for-approval flag in 0.162.1; approval is set with -c.) Must run from the trusted scratch root."
+    "   (codex exec rejects -a/--ask-for-approval in 0.162.1; the top-level form 'codex -a never exec' parses but its effect on exec is unverified, so -c is used. See native-capabilities.md C10.) Must run from the trusted scratch root."
     "   expect: a spawn event naming demo_agent. Record PASS/FAIL from the JSON event stream."
   }
   'Cleanup' {
