@@ -7,7 +7,7 @@
   and deletes it. Does NOT touch user config, trust, hooks, or this repository. Starts no model session.
   The scratch repo is untrusted by construction (no [projects] entry), so results describe an
   UNTRUSTED project. Run from PowerShell 7 (Git Bash rewrites cmd.exe arguments).
-  Network control uses curl.exe against https://example.com (one outbound HTTPS request).
+  Network control uses curl.exe against https://example.com (one outbound HTTPS request from curl.exe; codex doctor/prompt-input may make their own).
 #>
 $ErrorActionPreference = 'Continue'
 $repoRoot = (git rev-parse --show-toplevel) 2>$null
@@ -49,10 +49,35 @@ try {
     "launch=$($d.Replace($s,'<scratch>'))  rootAGENTS=$(Has $p 'ROOT_SENTINEL_S03')  subAGENTS=$(Has $p 'SUB_SENTINEL_S03')  rootSkill=$(Has $p 'S03_ROOT_SKILL_SENTINEL')  nestedSkill=$(Has $p 'S03_NESTED_SKILL_SENTINEL')  customAgentName=$(Has $p "demo_agent")  ancestorAGENTS=$(Has $p "ANCESTOR_SENTINEL_S03")"
   }
 
+  "`n## P2f AGENTS.override.md, fallback filename, and size cap (scratch root, untrusted)"
+  Set-Location $s
+  Set-Content "$s\AGENTS.override.md" 'OVERRIDE_SENTINEL_S03'
+  $p = codex debug prompt-input | Out-String
+  "override present: root AGENTS.md=$(Has $p 'ROOT_SENTINEL_S03') override=$(Has $p 'OVERRIDE_SENTINEL_S03')"
+  Remove-Item "$s\AGENTS.override.md"; Remove-Item "$s\AGENTS.md"
+  Set-Content "$s\FALLBACK_DOC.md" 'FALLBACK_SENTINEL_S03'
+  $p = codex -c 'project_doc_fallback_filenames=["FALLBACK_DOC.md"]' debug prompt-input | Out-String
+  "fallback filename (no AGENTS.md): loaded=$(Has $p 'FALLBACK_SENTINEL_S03')"
+  Set-Content "$s\AGENTS.md" ('CAP_HEAD_S03 ' + ('x' * 200) + ' CAP_TAIL_S03')
+  $p = codex -c 'project_doc_max_bytes=64' debug prompt-input | Out-String
+  "project_doc_max_bytes=64: head loaded=$(Has $p 'CAP_HEAD_S03') tail loaded=$(Has $p 'CAP_TAIL_S03')"
+  Remove-Item "$s\FALLBACK_DOC.md"; Set-Content "$s\AGENTS.md" 'ROOT_SENTINEL_S03'
+
+  "`n## P2g rule file parse (offline checker; does NOT show the project layer loaded it)"
+  codex execpolicy check --rules "$s\.codex\rules\p.rules" -- git push origin main | ConvertFrom-Json | ForEach-Object { "decision=$($_.decision)" }
+
   "`n## P3 default sandbox mode and network text in the rendered prompt (this repository, untrusted)"
-  Set-Location $repoRoot
+  Set-Location $(if ($repoRoot) { $repoRoot } else { $s })
   $p = codex debug prompt-input | Out-String
   "prompt says sandbox_mode read-only: $($p -match 'sandbox_mode. is .read-only')   network restricted: $(Has $p 'Network access is restricted')"
+  $nested = Join-Path $repoRoot 'tools\control_plane'
+  if (Test-Path $nested) {
+    Set-Location $nested
+    $pn = codex debug prompt-input | Out-String
+    $wr = [regex]::Matches($pn, '<root>(.*?)</root>') | ForEach-Object { $_.Groups[1].Value }
+    "nested launch in this repo: workspace root(s) in prompt = $(($wr | ForEach-Object { $_ -replace [regex]::Escape($env:USERPROFILE), '%USERPROFILE%' }) -join '; ')"
+  }
+  if (-not $repoRoot) { "WARNING: not run inside a Git repo; P3 skipped" }
 
   "`n## P4 protected paths + network under codex sandbox (scratch repo, -P :workspace unless noted)"
   Set-Location $s
@@ -68,12 +93,23 @@ try {
     @('new file .aws\probe.txt', ':workspace', 'echo x> .aws\probe.txt', '.aws\probe.txt', $false),
     @('profile :read-only writes', ':read-only', 'echo x> ro.txt', 'ro.txt', $false)
   )
-  foreach ($r in $rows) {
-    $rc = Sbx $r[1] $r[2]
-    $created = if ($r[3]) { Test-Path $r[3] } else { 'n/a' }
-    "{0,-40} exit={1} created={2}" -f $r[0], $rc, $created
+  function Run-Rows($label, $useProfile, $extra) {
+    foreach ($r in $rows) {
+      if (-not $useProfile -and $r[1] -eq ':read-only') { continue }
+      $rc = Sbx $(if ($useProfile) { $r[1] } else { $null }) $r[2] $extra
+      $created = if ($r[3]) { Test-Path $r[3] } else { 'n/a' }
+      "{0,-14} {1,-40} exit={2} created={3}" -f $label, $r[0], $rc, $created
+    }
   }
-  "config.toml untouched: $(-not ((Get-Content .codex\config.toml -Raw) -match 'hacked'))   agents file untouched: $(-not ((Get-Content .codex\agents\demo.toml -Raw) -match 'hacked'))"
+  function Guarded-State {
+    $bad = @('.codex\config.toml', '.codex\agents\demo.toml', '.agents\skills\demo-skill\SKILL.md', '.git\config') |
+      Where-Object { (Get-Content $_ -Raw) -match 'hacked' }
+    "protected files modified (content check, expect none): $(if ($bad) { $bad -join ', ' } else { 'none' })"
+  }
+  Run-Rows 'profile' $true @();                                         Guarded-State
+  Run-Rows 'sandbox_mode' $false @('-c', 'sandbox_mode="workspace-write"'); Guarded-State
+  $null = Sbx ':workspace' 'del .codex\config.toml'
+  "del of protected .codex\config.toml: exit=$LASTEXITCODE file still present=$(Test-Path .codex\config.toml)  (grade on file state, not exit code)"
   $rc = Sbx $null 'echo x> dflt.txt';                                   "no profile, no -c: write exit=$rc created=$(Test-Path dflt.txt)"
   $rc = Sbx $null 'echo x> sm.txt' @('-c', 'sandbox_mode="workspace-write"'); "-c sandbox_mode=workspace-write: write exit=$rc created=$(Test-Path sm.txt)"
   $rc = Sbx $null 'echo x> .git\sm.txt' @('-c', 'sandbox_mode="workspace-write"'); "-c sandbox_mode=workspace-write: .git write exit=$rc created=$(Test-Path .git\sm.txt)"

@@ -33,9 +33,9 @@ Manual steps (operator only):
  2. Grant trust:    cd '$root'; codex       # answer the trust prompt with "trust", then /status (record sandbox, approval,
                                             # roots, loaded config layers), /hooks (record state; no hooks exist), /agent or
                                             # /subagents if available, /skills, then /quit
- 3. AFTER trust:    pwsh -NoProfile -File tools/control_plane/operator_checks_p0s03.ps1 -Mode Verify
+ 3. AFTER trust:    pwsh -NoProfile -File '$PSCommandPath' -Mode Verify
                     # expect: goals false; execpolicy shows project rule; project agent/skill visible per the checks
- 4. Cleanup:        pwsh -NoProfile -File tools/control_plane/operator_checks_p0s03.ps1 -Mode Cleanup
+ 4. Cleanup:        pwsh -NoProfile -File '$PSCommandPath' -Mode Cleanup
                     then remove the [projects.'<temp path>'] trust entry for the scratch path from ~/.codex/config.toml.
 Record each result as: PASS / FAIL / BLOCKED: operator, with the command and the observed output.
 "@
@@ -54,7 +54,8 @@ Record each result as: PASS / FAIL / BLOCKED: operator, with the command and the
     New-Item -ItemType Directory -Force "$root\sub" | Out-Null; Set-Location "$root\sub"
     "   $((codex features list | Select-String '^goals').Line -replace '\s+', ' ')"
     "V5 custom agent visibility needs a model session (paid): NOT run here. Planned, operator-approved run only:"
-    "   codex exec --sandbox read-only --json 'Spawn the agent named demo_agent and report its reply.'"
+    "   cd '$root'; codex exec --sandbox read-only -c 'approval_policy=`"never`"' --json 'Spawn the agent named demo_agent and report its reply.'"
+    "   (codex exec has no --ask-for-approval flag in 0.162.1; approval is set with -c.) Must run from the trusted scratch root."
     "   expect: a spawn event naming demo_agent. Record PASS/FAIL from the JSON event stream."
   }
   'Cleanup' {
