@@ -23,15 +23,17 @@ Pointers (read when relevant):
 Pick the level by judgment (no score), taking the highest that applies:
 - L0, one clear local edit: just do it and read the diff. No plan, no agents, no suite.
 - L1, one component: read the code, fix it, then run the one focused check yourself, even if the
-  request did not ask for verification.
+  request did not ask for verification. If the check cannot run
+  (missing tool or module), do not edit the test or its imports to make it run: report it as not run.
 - L2, several components, a cross-module contract, or a real design unknown: before the first edit,
   send a message that starts "Plan:" with the objective, files in scope, checks to run, and open
   decisions. Then implement and run the component and cross-module checks.
 - L3, or any security-sensitive, destructive, irreversible, data-migrating, or production-facing
   change whatever its size: start with a "Plan:" message that covers failure paths and rollback.
   Prepare the change but do not run it against shared or production data without authorization.
-  Finish with status `BLOCKED` naming the unrun step, what is irreversible, the backup or rollback
-  needed, and the authorization required. Get an independent review before any `COMPLETE`.
+  Applying it is part of finishing the task, so while that step is unrun, finish with status
+  `BLOCKED` naming the step, what is irreversible, the backup or rollback needed, and the
+  authorization required. Get an independent review before any `COMPLETE`.
 Levels and signals: `.codex/knowledge/task-classification.md`. Use `/plan` if the user wants to review a plan first.
 
 ## Skills and subagents

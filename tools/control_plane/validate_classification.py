@@ -32,7 +32,7 @@ FORMULA = re.compile(r"\bC\s*=|\b\d\s*[S R D U V]\b\s*\+|weighted (score|sum)|sc
                      r"threshold of \d|https?://|classif\w+ (service|api|endpoint|server)|\bMCP server\b", re.I)
 EXP_ROW = re.compile(r"^\| (CLS-\d+) \| ([^|]+?) \| (.+?) \|$", re.M)
 STATIC_ROW = re.compile(r"^\| (T\d+) \| ([A-Za-z+ ]+?) \| (L[0-3]) \| (yes|no) \| (.+?) \| (.+?) \| (.+?) \|$", re.M)
-RUN_ROW = re.compile(r"^\| (R\d+) \| (L[0-3]) \| (.+?) \| (.+?) \| (.+?) \| `?([A-Z]+)`? \|$", re.M)
+RUN_ROW = re.compile(r"^\| (R\d+) \| (L[0-3]) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \|$", re.M)
 RUNS_WANTED = ["R1", "R2", "R3", "R4", "R5", "R6"]
 
 
@@ -138,8 +138,9 @@ def check_verify(v, doc):
         for x in covered_refs - ids:
             errs.append(f"{rid}: unknown expectation {x}")
         covered |= covered_refs
-        if not re.match(rf"({'|'.join(RESULTS)})\b", r[4]) and r[5] not in RESULTS:
-            errs.append(f"{rid}: result must be one of {sorted(RESULTS)}")
+        words = re.findall(r"[A-Z]{4,}", r[5])  # the cell may hold one verdict per clean pass
+        if not words or not set(words) <= RESULTS:
+            errs.append(f"{rid}: result must be made of {sorted(RESULTS)}, got {r[5]!r}")
     for e in sorted(ids - covered):
         errs.append(f"expectation {e} is covered by no trace row or run")
     for needle in ("## Not verified", "BLOCKED: operator"):
