@@ -1,6 +1,6 @@
 """Fixture tests for review_ledger.py (P2-S04). Run: python -I tools/control_plane/test_review_ledger.py
 
-These test local policy and state code with synthetic findings. They do not run Codex, a reviewer, or a model, and so say nothing
+These test a local consistency tool (not a security boundary) with synthetic findings. They do not run Codex, a reviewer, or a model, and so say nothing
 about live reviewer behavior.
 """
 import copy
@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import review_ledger as rl  # noqa: E402
@@ -86,27 +87,32 @@ class Evidence(unittest.TestCase):
         rl.begin_round(led, POLICY, "head1", S1, now=T)
         passing(led, ["diff_check"])
         g = rl.gate(led, POLICY, S1)
-        self.assertEqual((g["state"], g["tier"]), ("CLEAR", "low"))
+        self.assertEqual((g["state"], g["tier"]), ("CHECKS_PASS", "low"))
 
-    def test_medium_clean_needs_human_approval_at_current_state(self):
+    def test_medium_tier_with_all_checks_still_awaits_an_external_human(self):
         led = ledger(["src/app.py"])
         passing(led, ["diff_check", "focused_check"])
-        self.assertEqual(rl.gate(led, POLICY, S1)["state"], "AWAITING_HUMAN")
-        rl.approve(led, "human", "jack", S1, now=T)
-        self.assertEqual(rl.gate(led, POLICY, S1)["state"], "CLEAR")
-        # an approval covers one state: new code needs new evidence and a new approval
-        self.assertEqual(rl.gate(led, POLICY, S2)["state"], "BLOCKED_EVIDENCE")
-        passing(led, ["diff_check", "focused_check"], S2)
-        self.assertEqual(rl.gate(led, POLICY, S2)["state"], "AWAITING_HUMAN")
+        g = rl.gate(led, POLICY, S1)
+        self.assertEqual(g["state"], "AWAITING_EXTERNAL_HUMAN")
+        self.assertEqual((g["human_authorization"], g["human_review_required_by_policy"]), ("external_deferred", True))
+        self.assertEqual(rl.gate(led, POLICY, S2)["state"], "BLOCKED_EVIDENCE")  # new code needs new evidence
 
-    def test_model_and_tool_approvals_do_not_count(self):
+    def test_no_approval_path_exists_and_only_low_tier_can_pass(self):
+        # roles and flags are typed by the caller, so nothing here can authenticate a human: there is no approval to record
+        self.assertFalse(hasattr(rl, "approve"))
+        self.assertNotIn("approvals", ledger())
+        for files in (["src/app.py"], [".codex/config.toml"], ["tools/control_plane/x.py"]):
+            led = ledger(files)
+            passing(led, ["diff_check", "focused_check", "static_validators"])
+            self.assertEqual(rl.gate(led, POLICY, S1)["state"], "AWAITING_EXTERNAL_HUMAN", files)
+
+    def test_human_attested_evidence_is_flagged_not_trusted_silently(self):
         led = ledger(["src/app.py"])
-        passing(led, ["diff_check", "focused_check"])
-        for role in ("model", "tool"):
-            with self.assertRaises(rl.PolicyError):
-                rl.approve(led, role, "reviewer-1", S1)
-        self.assertEqual(led["approvals"], [])
-        self.assertEqual(rl.gate(led, POLICY, S1)["state"], "AWAITING_HUMAN")
+        passing(led, ["diff_check"])
+        rl.add_evidence(led, "focused_check", "human", [{"command": "ran the module by hand", "exit_code": 0}], S1, now=T)
+        g = rl.gate(led, POLICY, S1)
+        self.assertEqual(g["unauthenticated_evidence"], ["focused_check"])
+        self.assertEqual(g["missing_or_failed_evidence"], [])
 
     def test_missing_evidence_fails_closed(self):
         led = ledger(["tools/control_plane/x.py"])  # high: needs three checks
@@ -141,7 +147,6 @@ class Findings(unittest.TestCase):
     def setUp(self):
         self.led = ledger(["src/app.py"])
         passing(self.led, ["diff_check", "focused_check"])
-        rl.approve(self.led, "human", "jack", S1, now=T)
         rl.begin_round(self.led, POLICY, "head1", S1, now=T)
 
     def test_confirmed_regression_blocks_progression(self):
@@ -156,7 +161,7 @@ class Findings(unittest.TestCase):
         with self.assertRaises(rl.PolicyError):
             rl.disposition(self.led, POLICY, fid, "fixed", "model", "agent", "patched the eval call", S1, check="diff_check")
         rl.disposition(self.led, POLICY, fid, "fixed", "tool", "ci", "patched the eval call", S1, check="diff_check")
-        self.assertEqual(rl.gate(self.led, POLICY, S1)["state"], "CLEAR")
+        self.assertEqual(rl.gate(self.led, POLICY, S1)["state"], "AWAITING_EXTERNAL_HUMAN")  # medium tier: a person decides elsewhere
         # the same bug found again after the fix reopens it and blocks again
         rl.begin_round(self.led, POLICY, "head2", S1, now=T)
         outcome, _ = rl.add_finding(self.led, POLICY, finding(line=44), "model", now=T)
@@ -179,7 +184,21 @@ class Findings(unittest.TestCase):
                          [("proposed_false_positive", "model", "agent-1"), ("false_positive", "human", "jack")])
         self.assertTrue(all(h["at"] and h["rationale"] for h in f["history"]))
         self.assertEqual(f["provenance"]["reviewer"], "reviewer-1")
-        self.assertEqual(rl.gate(self.led, POLICY, S1)["state"], "CLEAR")
+        g = rl.gate(self.led, POLICY, S1)
+        self.assertEqual(g["state"], "AWAITING_EXTERNAL_HUMAN")
+        self.assertEqual([(c["id"], c["declared_by"], c["declared_role"]) for c in g["unauthenticated_human_dispositions"]],
+                         [(fid, "jack", "human")])
+
+    def test_a_declared_human_cannot_clear_a_material_finding_even_on_a_low_tier_change(self):
+        led = ledger(["docs/a.md"])  # low tier: no human review required by policy
+        passing(led, ["diff_check"])
+        rl.begin_round(led, POLICY, "head1", S1, now=T)
+        _, fid = rl.add_finding(led, POLICY, finding(file="docs/a.md", anchor="run this"), "model", now=T)
+        rl.disposition(led, POLICY, fid, "false_positive", "human", "anyone", "typed by whoever calls the tool", S1, now=T)
+        g = rl.gate(led, POLICY, S1)
+        self.assertEqual(g["state"], "AWAITING_EXTERNAL_HUMAN")
+        self.assertNotEqual(g["state"], "CHECKS_PASS")
+        self.assertEqual(g["unauthenticated_human_dispositions"][0]["id"], fid)
 
     def test_tampering_with_a_recorded_finding_is_detected(self):
         _, fid = rl.add_finding(self.led, POLICY, finding(), "model", now=T)
@@ -212,7 +231,9 @@ class Findings(unittest.TestCase):
 
     def test_low_severity_is_recorded_but_does_not_block(self):
         rl.add_finding(self.led, POLICY, finding(sev="low", anchor="# todo"), "model", now=T)
-        self.assertEqual(rl.gate(self.led, POLICY, S1)["state"], "CLEAR")
+        g = rl.gate(self.led, POLICY, S1)
+        self.assertEqual(g["unresolved_material"], [])
+        self.assertEqual(g["state"], "AWAITING_EXTERNAL_HUMAN")  # not blocked by the nit; the medium tier still needs a person
 
 
 class RoundCap(unittest.TestCase):
@@ -238,15 +259,16 @@ class RoundCap(unittest.TestCase):
             rl.begin_round(led, POLICY, "head5", S1, now=T)
         self.assertEqual(sum(h["status"] == "escalated" for h in f["history"]), 1)
         rl.disposition(led, POLICY, fid, "accepted_risk", "human", "jack", "accepted: constant input, tracked in the backlog", S1, now=T)
-        rl.approve(led, "human", "jack", S1, now=T)
-        self.assertEqual(rl.gate(led, POLICY, S1)["state"], "CLEAR")
+        g = rl.gate(led, POLICY, S1)
+        self.assertEqual(g["state"], "AWAITING_EXTERNAL_HUMAN")  # recorded, but unauthenticated: an external human must confirm
+        self.assertEqual(g["unauthenticated_human_dispositions"][0]["status"], "accepted_risk")
 
     def test_cap_reached_without_findings_is_not_an_escalation(self):
         led = ledger()
         passing(led, ["diff_check"])
         for i in range(3):
             rl.begin_round(led, POLICY, f"h{i}", S1, now=T)
-        self.assertEqual(rl.gate(led, POLICY, S1)["state"], "CLEAR")
+        self.assertEqual(rl.gate(led, POLICY, S1)["state"], "CHECKS_PASS")
 
 
 def sh(cwd, *args):
@@ -331,7 +353,7 @@ class Repository(unittest.TestCase):
         self.assertEqual(before, after)  # status, diffs, staged state, file bytes and index are all unchanged
         self.assertTrue(Path(self.root, ".codex-runtime", "review", "run1.json").exists())
 
-    def test_cli_end_to_end_clear_for_a_docs_change(self):
+    def test_cli_end_to_end_checks_pass_for_a_docs_change(self):
         sh(self.root, "git", "checkout", "-q", "--", "tracked.txt")
         sh(self.root, "git", "rm", "-q", "--cached", "staged.txt")
         os.unlink(Path(self.root, "staged.txt"))
@@ -340,7 +362,7 @@ class Repository(unittest.TestCase):
         self.assertEqual(self.cli("init", "docs1", "--base", "HEAD", "--suggest-tier", "low")[0], 0)
         self.assertEqual(self.cli("evidence", "docs1", "diff_check")[0], 0)
         rc, out = self.cli("gate", "docs1")
-        self.assertEqual((rc, json.loads(out)["state"]), (0, "CLEAR"))
+        self.assertEqual((rc, json.loads(out)["state"]), (0, "CHECKS_PASS"))
         Path(self.root, "docs", "a.md").write_text("doc changed again\n")  # code state moved: evidence is stale
         rc, out = self.cli("gate", "docs1")
         self.assertEqual((rc, json.loads(out)["state"]), (1, "BLOCKED_EVIDENCE"))
@@ -349,11 +371,61 @@ class Repository(unittest.TestCase):
         self.assertEqual(self.cli("init", "x1", "--base", "HEAD")[0], 0)
         self.assertEqual(self.cli("init", "x1", "--base", "HEAD")[0], 2)
         self.assertEqual(self.cli("gate", "nope")[0], 2)
-        self.assertEqual(self.cli("approve", "x1", "--by", "jack")[0], 0)  # CLI approve is the human path; see doc limits
+        self.assertEqual(self.cli("approve", "x1", "--by", "jack")[0], 2)  # there is no approval command
+        self.assertNotIn("approvals", json.loads(Path(self.root, ".codex-runtime", "review", "x1.json").read_text()))
         bad = copy.deepcopy(POLICY)
         bad["max_auto_rounds"] = 9
         self.policy_path.write_text(json.dumps(bad))
         self.assertEqual(self.cli("gate", "x1")[0], 2)
+
+    def test_untracked_content_change_makes_collected_evidence_stale(self):
+        self.assertEqual(self.cli("init", "u1", "--base", "HEAD")[0], 0)
+        rc, out = self.cli("evidence", "u1", "diff_check")
+        self.assertEqual(rc, 0, out)
+        rc, out = self.cli("gate", "u1")
+        missing = {m["check"]: m["reason"] for m in json.loads(out)["missing_or_failed_evidence"]}
+        self.assertNotIn("diff_check", missing)  # fresh and passing; only the human-recorded focused_check is missing
+        Path(self.root, "untracked.txt").write_text("mine, edited after the evidence was collected\n")
+        rc, out = self.cli("gate", "u1")
+        missing = {m["check"]: m["reason"] for m in json.loads(out)["missing_or_failed_evidence"]}
+        self.assertIn("stale", missing["diff_check"])
+        self.assertEqual(json.loads(out)["state"], "BLOCKED_EVIDENCE")
+
+    def test_state_id_covers_untracked_contents_but_not_ignored_files(self):
+        a = rl.state_id(self.root)
+        self.assertEqual(a, rl.state_id(self.root))  # deterministic
+        Path(self.root, "untracked.txt").write_text("changed\n")
+        b = rl.state_id(self.root)
+        self.assertNotEqual(a, b)
+        Path(self.root, "second_untracked.txt").write_text("x\n")
+        c = rl.state_id(self.root)
+        self.assertNotEqual(b, c)
+        os.unlink(Path(self.root, "second_untracked.txt"))
+        self.assertEqual(b, rl.state_id(self.root))
+        Path(self.root, ".codex-runtime").mkdir(exist_ok=True)
+        Path(self.root, ".codex-runtime", "scratch.txt").write_text("ignored\n")
+        self.assertEqual(b, rl.state_id(self.root))  # git-ignored files are outside the state
+
+    def test_untracked_files_that_cannot_be_bound_fail_closed(self):
+        Path(self.root, "second_untracked.txt").write_text("x\n")
+        with mock.patch.object(rl, "MAX_UNTRACKED_FILES", 1), self.assertRaises(rl.PolicyError):
+            rl.state_id(self.root)
+        with mock.patch.object(rl, "MAX_UNTRACKED_BYTES", 1), self.assertRaises(rl.PolicyError):
+            rl.state_id(self.root)
+        with mock.patch.object(Path, "is_symlink", return_value=True), self.assertRaises(rl.PolicyError):  # symlinks cannot be created here
+            rl.state_id(self.root)
+        os.unlink(Path(self.root, "second_untracked.txt"))
+        nested = Path(self.root, "nested")
+        nested.mkdir()
+        sh(nested, "git", "init", "-q", ".")
+        with self.assertRaises(rl.PolicyError):  # a nested repository is listed as a directory
+            rl.state_id(self.root)
+
+    def test_runtime_directory_inside_the_repo_must_be_ignored(self):
+        rc, out = self.cli("--runtime-dir", str(Path(self.root, "rt")), "init", "n1", "--base", "HEAD")
+        self.assertEqual(rc, 2)
+        self.assertIn("not git-ignored", out)
+        self.assertFalse(Path(self.root, "rt").exists())
 
     def test_state_id_changes_with_tracked_edits(self):
         a = rl.state_id(self.root)

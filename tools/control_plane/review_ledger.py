@@ -7,15 +7,16 @@ Usage (all state lives in .codex-runtime/review/<id>.json; nothing here calls a 
   python -I tools/control_plane/review_ledger.py round ID
   python -I tools/control_plane/review_ledger.py finding ID --role ROLE --json FILE
   python -I tools/control_plane/review_ledger.py dispose ID FINDING STATUS --role ROLE --by WHO --rationale TEXT [--check NAME]
-  python -I tools/control_plane/review_ledger.py approve ID --by WHO
-  python -I tools/control_plane/review_ledger.py gate ID           # exit 0 only when the gate state is CLEAR
-Exit: 0 ok / CLEAR; 1 gate not CLEAR; 2 refused, invalid input, or corrupt state (fail closed).
+  python -I tools/control_plane/review_ledger.py gate ID           # exit 0 only when the gate state is CHECKS_PASS
+Exit: 0 ok / CHECKS_PASS; 1 gate not CHECKS_PASS; 2 refused, invalid input, or corrupt state (fail closed).
 
-What this is. State and policy handling around a review that something else performs (a human, native /review, a reviewer
-session). It records facts and applies fixed rules. It does not review code, call a model, or run in CI.
-Limits that matter (see .codex/knowledge/review-ledger.md):
-  * `--role` is declared by the caller. The role rules stop mistakes and honest misuse; they are not a defense against a caller
-    with shell access who declares `human`. Real human gates must be run by a person outside the model's reach.
+What this is. A LOCAL CONSISTENCY TOOL, not a security boundary. It keeps review facts in order around a review that something else
+performs (a human, native /review, a reviewer session): evidence bound to a code state, findings, dedup, a round cap, risk floors.
+It does not review code, call a model, run in CI, or authenticate anyone.
+Human authorization is EXTERNAL and DEFERRED: there is no approval path here. `--role` and `--by` are strings the caller types, so
+nothing in this file can tell a human from a model with shell access. CHECKS_PASS means the recorded automated conditions hold; it is
+never an authorization to merge, push or deploy. A gate state of AWAITING_EXTERNAL_HUMAN means a person must decide elsewhere.
+Other limits (see .codex/knowledge/review-ledger.md):
   * The ledger file is plain JSON under a writable directory. The per-finding hash detects accidental or partial edits, not a
     deliberate rewrite of the whole file.
   * The policy file lives under .codex/, a documented protected path in workspace-write; the code and ledger do not.
@@ -230,14 +231,67 @@ def head_commit(repo):
     return git(repo, "rev-parse", "HEAD").decode().strip()
 
 
+MAX_UNTRACKED_FILES = 2000
+MAX_UNTRACKED_BYTES = 64 * 1024 * 1024
+
+
+def untracked_digest(repo):
+    """Digest of the path and CONTENT of every untracked, non-ignored file.
+    Fails closed instead of guessing: too many or too large files, a symlink, a directory or nested repository, an unreadable file.
+    Commit, ignore or remove such files before reviewing."""
+    names = sorted(p for p in git(repo, "ls-files", "--others", "--exclude-standard", "-z").split(b"\0") if p)
+    if len(names) > MAX_UNTRACKED_FILES:
+        raise PolicyError(f"{len(names)} untracked files (limit {MAX_UNTRACKED_FILES}): commit, ignore or remove them first")
+    h, total = hashlib.sha256(), 0
+    for raw in names:
+        rel = raw.decode("utf-8", "replace")
+        path = Path(repo, rel)
+        try:
+            if path.is_symlink():
+                raise PolicyError(f"untracked symlink {rel!r}: its target can change or point outside the repository; commit, ignore or remove it")
+            elif path.is_dir():
+                raise PolicyError(f"untracked directory or nested repository {rel!r}: its contents cannot be bound to the state")
+            else:
+                total += path.stat().st_size
+                if total > MAX_UNTRACKED_BYTES:
+                    raise PolicyError(f"untracked files exceed {MAX_UNTRACKED_BYTES} bytes: commit, ignore or remove them first")
+                d = hashlib.sha256()
+                with open(path, "rb") as fh:
+                    for chunk in iter(lambda: fh.read(1 << 20), b""):
+                        d.update(chunk)
+                kind, digest = b"F", d.digest()
+        except OSError as e:
+            raise PolicyError(f"cannot read untracked file {rel!r}: {e}")
+        h.update(kind + raw + b"\0" + digest)
+    return h.digest()
+
+
 def state_id(repo):
-    """Identifies the exact code state: HEAD, tracked diff, and the list of changed and untracked paths.
-    Untracked file contents are not hashed (limitation): an edit to an untracked file does not change the id."""
+    """Identifies the exact code state: HEAD, `git status`, the tracked diff, and the path and content of untracked files.
+    Ignored files are outside the state by definition. An edit to any covered file changes the id."""
     h = hashlib.sha256()
-    for part in (git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain=v1", "-z"), git(repo, "diff", "HEAD", "--binary")):
+    for part in (git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain=v1", "-z"), git(repo, "diff", "HEAD", "--binary"),
+                 untracked_digest(repo)):
         h.update(part)
         h.update(b"\0")
     return h.hexdigest()[:16]
+
+
+def require_ignored_runtime(repo, rt):
+    """The ledger directory must not change the state it describes: inside the repo it must be git-ignored."""
+    try:
+        rel = Path(rt).resolve().relative_to(Path(repo).resolve())
+    except ValueError:
+        return
+    probe = (rel / "x.json").as_posix()
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "check-ignore", "-q", "--", probe], capture_output=True,
+                           stdin=subprocess.DEVNULL, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise PolicyError(f"cannot check whether the runtime directory is ignored: {e}")
+    if r.returncode != 0:
+        raise PolicyError(f"runtime directory {rel.as_posix()} is inside the repository but not git-ignored: "
+                          "the ledger itself would change the code state and make every record stale")
 
 
 def changed_files(repo, base):
@@ -268,7 +322,7 @@ def new_ledger(review_id, policy, files, head, state, now=None, suggested=None):
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", review_id or ""):
         raise PolicyError("review id must match [A-Za-z0-9._-]{1,64}")
     return {"schema_version": 1, "review_id": review_id, "created_at": now or utcnow(), "head": head, "state_id": state,
-            "risk": classify(files, policy, suggested), "rounds": [], "evidence": [], "findings": {}, "approvals": []}
+            "risk": classify(files, policy, suggested), "rounds": [], "evidence": [], "findings": {}}
 
 
 def verify(ledger):
@@ -421,19 +475,22 @@ def disposition(ledger, policy, fid, status, role, by, rationale, state, check=N
     return current_status(f)
 
 
-def approve(ledger, role, by, state, now=None):
-    verify(ledger)
-    if role != "human":
-        raise PolicyError("only a human approval counts; model and tool approvals are refused")
-    if not (isinstance(by, str) and by.strip()):
-        raise PolicyError("an approval needs an author")
-    ledger["approvals"].append({"role": "human", "by": by.strip(), "state_id": state, "at": now or utcnow()})
+def unauthenticated_closures(ledger, policy):
+    """Material findings recorded as false_positive or accepted_risk. Only a declared 'human' can set these, but the ledger cannot
+    authenticate that declaration, so they are listed for an external human to confirm and never clear the gate by themselves."""
+    out = []
+    for f in ledger["findings"].values():
+        st = current_status(f)
+        if is_material(f, policy) and st in ("false_positive", "accepted_risk"):
+            h = [x for x in f["history"] if x["status"] == st][-1]
+            out.append({"id": f["id"], "status": st, "declared_by": h["by"], "declared_role": h["role"], "at": h["at"]})
+    return out
 
 
 def gate(ledger, policy, state):
     verify(ledger)
     tier = ledger["risk"]["tier"]
-    reasons, blockers = [], []
+    blockers = []
     for name in policy["required_evidence"][tier]:
         ok, why = evidence_status(ledger, name, state)
         if not ok:
@@ -441,23 +498,31 @@ def gate(ledger, policy, state):
     unresolved = unresolved_material(ledger, policy)
     capped = len(ledger["rounds"]) >= policy["max_auto_rounds"]
     needs_human = policy["human_review"][tier] == "required"
-    human_ok = any(a["role"] == "human" and a["state_id"] == state for a in ledger["approvals"])
+    claims = unauthenticated_closures(ledger, policy)
+    latest = {}
+    for e in ledger["evidence"]:
+        latest[e["name"]] = e
+    attested = sorted(n for n, e in latest.items() if e["source"] == "human")
     if unresolved and capped:
         verdict = "ESCALATED"
     elif blockers:
         verdict = "BLOCKED_EVIDENCE"
     elif unresolved:
         verdict = "BLOCKED_FINDINGS"
-    elif needs_human and not human_ok:
-        verdict = "AWAITING_HUMAN"
+    elif needs_human or claims:
+        verdict = "AWAITING_EXTERNAL_HUMAN"
     else:
-        verdict = "CLEAR"
+        verdict = "CHECKS_PASS"
     return {"state": verdict, "tier": tier, "rounds": len(ledger["rounds"]), "max_rounds": policy["max_auto_rounds"],
             "missing_or_failed_evidence": blockers,
             "unresolved_material": [{"id": f["id"], "file": f["file"], "line": f["line"], "severity": f["severity"],
                                      "status": current_status(f)} for f in unresolved],
-            "human_review_required": needs_human, "human_approved_current_state": human_ok,
-            "model_judgment_note": "findings are model or human reports; evidence status and tier come from tools and policy"}
+            "human_authorization": "external_deferred",
+            "human_review_required_by_policy": needs_human,
+            "unauthenticated_human_dispositions": claims,
+            "unauthenticated_evidence": attested,
+            "note": "local consistency check, not a security boundary: findings are reports; roles and attested evidence are typed by the "
+                    "caller; CHECKS_PASS is not an authorization"}
 
 
 def rereview_scope(repo, ledger):
@@ -533,7 +598,6 @@ def main(argv):
     p = sub.add_parser("finding"); p.add_argument("id"); p.add_argument("--role", required=True); p.add_argument("--json", required=True)
     p = sub.add_parser("dispose"); p.add_argument("id"); p.add_argument("finding"); p.add_argument("status")
     p.add_argument("--role", required=True); p.add_argument("--by", required=True); p.add_argument("--rationale", required=True); p.add_argument("--check")
-    p = sub.add_parser("approve"); p.add_argument("id"); p.add_argument("--by", required=True)
     p = sub.add_parser("gate"); p.add_argument("id")
     a = ap.parse_args(argv)
     repo = Path(a.repo)
@@ -543,6 +607,7 @@ def main(argv):
         if a.cmd == "check-policy":
             print("PASS: policy valid")
             return 0
+        require_ignored_runtime(repo, rt)
         if a.cmd == "init":
             if ledger_path(rt, a.id).exists():
                 raise PolicyError("a ledger with this id already exists; it is never overwritten")
@@ -575,13 +640,10 @@ def main(argv):
             out = add_finding(led, policy, raw, a.role)
         elif a.cmd == "dispose":
             out = disposition(led, policy, a.finding, a.status, a.role, a.by, a.rationale, state, a.check)
-        elif a.cmd == "approve":
-            approve(led, "human", a.by, state)
-            out = "approved current state"
         elif a.cmd == "gate":
             g = gate(led, policy, state)
             print(json.dumps(g, indent=2))
-            return 0 if g["state"] == "CLEAR" else 1
+            return 0 if g["state"] == "CHECKS_PASS" else 1
         save(led, rt)
         print(out)
         return 0

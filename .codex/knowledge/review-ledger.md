@@ -8,6 +8,10 @@ Windows 11 build 22631, Git Bash, `python -I`, git 2.53.0. Base: `origin/main` `
 Started while **Phase 1 is PARTIAL** on the project owner's decision; its open evidence is unresolved (O-A, O-B, O-I, O-J `BLOCKED: operator`;
 S05 open; C1 and C2 recorded). No model session, `codex exec`, `/review`, or operator check was run.
 
+**Status: PARTIAL. This is a local consistency tool, not a security boundary.** It keeps review facts consistent (evidence bound to a code state,
+findings, dedup, a round cap, risk floors). It cannot authenticate anyone: roles and names are typed by the caller. **Human authorization is
+external and deferred**: this tool has no approval path, and its best gate result, `CHECKS_PASS`, is not an authorization.
+
 ## 1. What the ledger is, and is not
 
 It records facts and applies fixed rules around a review that someone or something else performs. It does not review code, call a model,
@@ -30,7 +34,7 @@ state and policy only.
 | Diff-only re-review | **missing** | none | **partial**: `rereview_scope` computes changed-since-last-round files plus files with unresolved findings; no reviewer consumes it |
 | Deterministic enforcement of critical rules | **partial** | sandbox and approvals are native (NC11, NC12); rules and hooks are Phase 4, not built | gate states are deterministic, but nothing forces a caller to consult the gate |
 | CI / GitHub integration | **externally dependent** | no `.github/`; branch protection and required checks are GitHub configuration | not added |
-| Human authorization boundaries | **partial** | contracts §1 authority rules (guidance) | `AWAITING_HUMAN` gate; only a human approval counts, bound to one code state |
+| Human authorization boundaries | **externally dependent / deferred** | contracts §1 authority rules (guidance); no authentication exists in this repo | **none provided.** There is no approval command or field. The gate reports `AWAITING_EXTERNAL_HUMAN` when policy requires a person, or when a declared human closed a material finding. Authenticated approval needs an external mechanism (for example a required review in GitHub branch protection, or an operator-held signed record); none is configured |
 | Reviewer regression evaluation, false-positive rate | **intentionally deferred** | BLUEPRINT Phase 6 | deferred (needs model runs); dispositions are preserved so a later measurement can use them |
 
 ## 3. Facts versus judgment
@@ -38,8 +42,8 @@ state and policy only.
 | Source | What it establishes |
 | --- | --- |
 | Tools and policy | tier and floor, evidence status (exit code, state id), round count, finding identity, gate state |
-| Humans | approvals, `false_positive`, `accepted_risk`, and any disposition of an escalated finding |
-| Models | findings and `proposed_false_positive` only. A model cannot approve, mark a material finding closed, supply evidence, lower a tier, or disposition an escalated finding |
+| Callers who declare `human` | dispositions `false_positive`, `accepted_risk`, and dispositions of an escalated finding are accepted as **recorded claims**. The ledger cannot authenticate them, so they never clear the gate; they are listed under `unauthenticated_human_dispositions` for an external human |
+| Models | findings and `proposed_false_positive` only. A model cannot mark a material finding closed by assertion, supply evidence, lower a tier, or disposition an escalated finding (consistency rules for honest callers, not authentication) |
 
 ## 4. Rules implemented
 
@@ -47,23 +51,33 @@ state and policy only.
   A suggested tier can raise it and a lower suggestion is ignored and recorded. `.codex/**`, `.agents/**`, `AGENTS.md`, `CLAUDE.md`,
   `tools/control_plane/**`, workflows, `*.rules`, migrations, auth, secret and env files are high. Docs-only is low.
 - **Evidence:** required names per tier; missing, `not_run`, failed (non-zero exit), or recorded for a different code state means `BLOCKED_EVIDENCE`.
-  The code state id covers `HEAD`, `git status` and `git diff HEAD`; contents of untracked files are not hashed (limitation).
+  The code state id covers `HEAD`, `git status`, `git diff HEAD` and the **path and content of every untracked, non-ignored file**, so editing an
+  untracked file after collecting evidence makes that evidence stale. It fails closed rather than guess: more than 2,000 untracked files, more than
+  64 MiB of them, an untracked symlink, directory or nested repository, or an unreadable file raises an error (commit, ignore or remove them first).
+  Git-ignored files are outside the state. The ledger directory must itself be git-ignored when it is inside the repository, or `init` and later
+  commands refuse (otherwise saving the ledger would change the state it describes). Evidence recorded by a person (`--record`) is
+  **attested and unauthenticated**; the gate lists it under `unauthenticated_evidence`.
 - **Findings:** rejected unless they carry a file, a positive line, a class and severity from closed lists, and at least 10 characters of inspected
   evidence. `low` severity is recorded and never blocks. Material = critical, high, medium.
 - **Dispositions are append-only.** The recorded fields of a finding never change (a per-finding hash is verified on every load and gate);
   its status is derived from the history. `fixed` on a material finding needs a passing check at the current state from a tool or a human;
-  `false_positive` and `accepted_risk` on a material finding are human-only; a model may only propose a false positive, which still blocks.
-- **Rounds:** at most three (policy values above three are rejected). Unresolved material findings at the cap become `escalated`; only a human can
-  then disposition them.
-- **Gate order:** `ESCALATED`, `BLOCKED_EVIDENCE`, `BLOCKED_FINDINGS`, `AWAITING_HUMAN`, `CLEAR`. `CLEAR` means the automated conditions hold and any
-  required human approval exists for the current state. It is not an authorization to merge, push or deploy; those stay with the project owner.
+  `false_positive` and `accepted_risk` on a material finding are accepted only from a declared `human` role (a consistency rule, not authentication) and are
+  surfaced as unauthenticated claims; a model may only propose a false positive, which still blocks. Closing a finding as `fixed` rests on a named passing
+  check at the current state, not on authority, and the ledger does not verify that the check covers that finding.
+- **Rounds:** at most three (policy values above three are rejected). Unresolved material findings at the cap become `escalated`; only a declared human
+  can then disposition them (unauthenticated).
+- **Gate order:** `ESCALATED`, `BLOCKED_EVIDENCE`, `BLOCKED_FINDINGS`, `AWAITING_EXTERNAL_HUMAN`, `CHECKS_PASS`. `CHECKS_PASS` is reachable only for a low-tier change
+  with every required check fresh and passing, no unresolved material finding, and no declared-human closure of a material finding. It means the
+  recorded automated conditions hold. It is **not** an authorization, and nothing here records one: medium and high tiers always end at
+  `AWAITING_EXTERNAL_HUMAN`. Merge, push, deploy and every other protected action stay with the project owner.
 
 ## 5. Enforcement labels and limits (read before relying on it)
 
 | Claim | Label |
 | --- | --- |
 | Policy cannot be weakened by editing it from a `workspace-write` session | **Codex-enforced**, documented protected path, helper-observed denial (S06); model-session outcome unverified. The policy file lives in `.codex/`. The code and the ledger do **not**: `tools/control_plane/` and `.codex-runtime/` are writable |
-| Role rules (`--role`, human-only dispositions, approvals) | **Advisory against a hostile caller.** The role is declared by whoever calls. A caller with shell access can declare `human`, or edit the ledger JSON. The per-finding hash detects accidental or partial edits, not a deliberate rewrite of the whole file. A real human gate must be run by a person outside the model's reach, or by CI |
+| Role rules (`--role`, `--by`, human-only dispositions) | **Advisory, not authentication.** Roles and names are strings the caller types. A caller with shell access can declare `human`, or edit the ledger JSON. The per-finding hash detects accidental or partial edits, not a deliberate rewrite of the whole file |
+| Human authorization of anything | **External / deferred.** The ledger has no approval path, by design (an earlier draft had one; it was removed because a declared role or flag cannot authenticate a human). Until an authenticated external mechanism exists, treat every `human` entry as a claim to confirm |
 | Three-round cap, dedup, risk floors, fail-closed evidence | **Control-plane-enforced** only for callers that use the ledger; nothing makes a repair loop call it |
 | The gate result blocks anything | **Advisory** until a required CI check or branch-protection rule consumes it (external dependency, not configured) |
 | Anchor-based identity | **Heuristic.** The reviewer supplies the anchor line and class; a reworded anchor or a different class creates a new finding |
@@ -75,7 +89,7 @@ this tool in a session; it is intended for the builder, operator or CI side.
 
 | Command | Result |
 | --- | --- |
-| `python -I tools/control_plane/test_review_ledger.py` | `Ran 27 tests ... OK` |
+| `python -I tools/control_plane/test_review_ledger.py` | `Ran 33 tests ... OK` (none skipped) |
 | `python -I tools/control_plane/review_ledger.py check-policy` | `PASS: policy valid` |
 | `python -I tools/control_plane/validate_config.py --codex --self-test` | regression: 15/15, PASS |
 | `python -I tools/control_plane/validate_contracts.py --codex --self-test` | regression: 29/29, PASS |
@@ -87,9 +101,17 @@ and the hash still verifies; (4) a duplicate on a later round with a shifted lin
 floor; (7) missing, not-run, stale and failed evidence fail closed; (8) in a temporary git repo with a modified tracked file, a staged file and an
 untracked file, the whole flow leaves the status, diffs, file bytes and `.git/index` byte-identical.
 
-Negative controls: 12 deliberate breaks of the code were applied to copies and each made the tests fail (floor downgrade allowed, no round cap, model
-approval counts, duplicate re-added, missing evidence ignored, stale evidence accepted, model marks a material finding false-positive, fixed without a
-check, integrity check removed, escalated finding editable by a model, model evidence accepted, private git index disabled).
+Added with the later corrections: collecting evidence and then editing an untracked file makes that evidence stale (CLI flow); the state id changes with
+untracked content and a new untracked file but not with a git-ignored file; the untracked-file limits, a symlink (mocked, because this host cannot create
+one) and a nested repository all fail closed; a runtime directory that is not git-ignored is refused; no `approve` function, command or `approvals` field
+exists; with all checks passing, medium and high tiers end at `AWAITING_EXTERNAL_HUMAN`; a declared-human false positive cannot reach `CHECKS_PASS`, even
+on a low-tier change; human-attested evidence is flagged.
+
+Negative controls: 17 deliberate breaks of the code were applied to copies and each made the tests fail (untracked contents not hashed, untracked digest
+dropped from the state id, a declared-human closure clearing the gate, the policy's human-review requirement ignored, an approval function reintroduced,
+the runtime-directory check removed, floor downgrade allowed, no round cap, duplicate re-added, missing evidence ignored, stale evidence accepted, a model
+marking a material finding false-positive, fixed without a check, integrity check removed, an escalated finding editable by a model, model evidence
+accepted, private git index disabled).
 
 Finding during verification: `git diff` rewrites `.git/index` (stat refresh) even with `--no-optional-locks`, so an early version that merely avoided
 `git status` still altered the user's index. All git calls and policy evidence commands now run against a throwaway copy of the index
@@ -101,7 +123,10 @@ Finding during verification: `git diff` rewrites `.git/index` (stat refresh) eve
 - The article's own numbers (round cap, results, tiers) are its authors' claims about their system; none was reproduced here. It does not say how
   finding identity is computed, how its vote threshold works, or whether its round cap is enforced mechanically; this design is independent of those.
 - Required checks, branch protection, a CI workflow that runs the gate, and any GitHub review integration are not configured (operator/GitHub dependency).
-- Human-only gates are unenforced against a caller who can run commands as the operator (section 5).
+- **Human authorization is not provided by this tool** (section 5). Any use of the gate as an approval is outside what it establishes.
+- Untracked-file binding has fixed limits (2,000 files, 64 MiB) and refuses symlinks, directories and nested repositories; hashing large untracked
+  trees is slow, and a project with many untracked generated files must ignore them. The symlink and nested-repository refusals were exercised
+  with a mock and a nested `git init`, not with a real symlink.
 - Not implemented: pre-existing tagging, a nightly review, incident-derived evaluation sets, false-positive rate measurement, specialized reviewers.
 
 ## 8. Reproduce
@@ -113,5 +138,5 @@ python -I tools/control_plane/review_ledger.py check-policy
 python -I tools/control_plane/review_ledger.py init R1 --base origin/main
 python -I tools/control_plane/review_ledger.py evidence R1 diff_check
 python -I tools/control_plane/review_ledger.py round R1
-python -I tools/control_plane/review_ledger.py gate R1      # exit 0 only when CLEAR
+python -I tools/control_plane/review_ledger.py gate R1      # exit 0 only when CHECKS_PASS (never an authorization)
 ```
