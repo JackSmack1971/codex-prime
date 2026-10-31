@@ -93,7 +93,8 @@ def check_agent(stem, cfg):
             errs.append(f"{stem}: instructions must forbid invented APIs or runtime behavior")
         if not re.search(r"(?i)evidence|inspected", di):
             errs.append(f"{stem}: instructions must require inspected evidence (BLUEPRINT 2.9)")
-    if stem in ANALYSIS_ONLY and feats.get("shell_tool") is not False:
+    shell_off = isinstance(feats, dict) and feats.get("shell_tool") is False
+    if stem in ANALYSIS_ONLY and not shell_off:
         errs.append(f"{stem}: analysis-only agent must set features.shell_tool = false (BLUEPRINT 2.3)")
     return errs
 
@@ -173,6 +174,8 @@ def mutations(base):
         ("undocumented feature key", setk(("features", "web_search"), False), "features.web_search is not a documented"),
         ("feature set true", setk(("features", "apps"), True), "features.apps must be false"),
         ("shell_tool not disabled", setk(("features", "shell_tool"), True), "features.shell_tool must be false"),
+        ("features not a table", setk(("features",), "shell_tool"), "'features' must be a table"),
+        ("features is a list", setk(("features",), [False]), "'features' must be a table"),
         ("shell_tool absent", one(_drop(a, "features", "shell_tool")), "must set features.shell_tool = false"),
         ("name shadows built-in", setk(("name",), "explorer"), "shadows a built-in"),
         ("name differs from file", setk(("name",), "other"), "does not match the filename"),
