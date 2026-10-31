@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "max_auto_rounds": 3,
+  "default_tier": "medium",
+  "path_rules": [
+    {"glob": ".codex/**", "tier": "high", "why": "control-plane config, policy, agents and knowledge (documented protected path)"},
+    {"glob": ".agents/**", "tier": "high", "why": "skills (documented protected path)"},
+    {"glob": ".git*", "tier": "high", "why": "repository control files"},
+    {"glob": "AGENTS.md", "tier": "high", "why": "root operating contract"},
+    {"glob": "CLAUDE.md", "tier": "high", "why": "builder contract"},
+    {"glob": "tools/control_plane/**", "tier": "high", "why": "validators and review state code that enforce policy"},
+    {"glob": ".github/workflows/**", "tier": "high", "why": "CI workflow files always need a person"},
+    {"glob": "**/*.rules", "tier": "high", "why": "execution rules"},
+    {"glob": "**/migrations/**", "tier": "high", "why": "data migrations"},
+    {"glob": "**/auth/**", "tier": "high", "why": "authentication code"},
+    {"glob": "**/*secret*", "tier": "high", "why": "secret-named files"},
+    {"glob": "**/.env*", "tier": "high", "why": "environment files"},
+    {"glob": "BLUEPRINT.md", "tier": "medium", "why": "design baseline"},
+    {"glob": "**/*.md", "tier": "low", "why": "documentation"}
+  ],
+  "file_count_floor": {"files": 15, "tier": "medium"},
+  "required_evidence": {
+    "low": ["diff_check"],
+    "medium": ["diff_check", "focused_check"],
+    "high": ["diff_check", "focused_check", "static_validators"]
+  },
+  "evidence_commands": {
+    "diff_check": [["git", "diff", "--check", "HEAD"]],
+    "static_validators": [
+      ["python", "-I", "tools/control_plane/validate_config.py", "--codex", "--self-test"],
+      ["python", "-I", "tools/control_plane/validate_contracts.py", "--codex", "--self-test"]
+    ],
+    "focused_check": null
+  },
+  "human_review": {"low": "not_required", "medium": "required", "high": "required"},
+  "material_severities": ["critical", "high", "medium"]
+}

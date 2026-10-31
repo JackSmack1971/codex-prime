@@ -11,6 +11,8 @@ probes in §9 after any upgrade.
 > **2026-10-31 re-baseline:** the installed binary is now `codex-cli 0.166.0`. The Phase 1 rows (config keys, instruction
 > discovery, trust, sandbox and protected paths) were re-probed and are recorded in `rebaseline-0166.md`. Everything below is
 > unchanged 0.162.1 evidence, and rows not re-probed there have **not** been checked on 0.166.0.
+>
+> Row 4 (custom agent definitions): `architect-agent-verification.md` (P2-S01, 2026-10-31, 0.166.0) records the schema, the static check, and the unverified discovery and `shell_tool` behavior.
 
 ## 1. Reading this file
 
