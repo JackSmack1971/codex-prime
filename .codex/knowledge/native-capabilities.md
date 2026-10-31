@@ -8,6 +8,10 @@ omitted, no credential file was opened, and user `config.toml` was touched only 
 **installed_version: `codex-cli 0.162.1`** (probe B1). Every row below applies to that version only; re-run the
 probes in §9 after any upgrade.
 
+> **2026-10-31 re-baseline:** the installed binary is now `codex-cli 0.166.0`. The Phase 1 rows (config keys, instruction
+> discovery, trust, sandbox and protected paths) were re-probed and are recorded in `rebaseline-0166.md`. Everything below is
+> unchanged 0.162.1 evidence, and rows not re-probed there have **not** been checked on 0.166.0.
+
 ## 1. Reading this file
 
 State vocabulary (BLUEPRINT §0.1). A state is claimed only where the named evidence exists.
