@@ -1,7 +1,9 @@
 # Task Classification — CODEX PRIME
 
-How Codex sizes a request and how much process it gets. Source: BLUEPRINT.md v1.1 §1.3–§1.4 (an external
-design document; citations are for the builder). Installed Codex: `codex-cli 0.162.1`. The root `AGENTS.md`
+How Codex sizes a request and how much process it gets. Source: BLUEPRINT.md v1.2 §1.3–§1.4 (tracked at the
+repository root; citations are for the builder; S05 was authored against v1.1 and its §1.3–§1.4 content was rechecked
+against v1.2 with no conflict found, except the L1 policy in §7). S05 was evaluated on `codex-cli 0.162.1` only and
+**has not been evaluated on 0.166.0**. The root `AGENTS.md`
 points here. Codex does not discover this file by itself, and nothing in Codex computes or enforces a
 classification: it is `GUIDANCE` the model reads, applied together with `contracts.md`. There is no scoring
 formula and no external service; the judgment is qualitative and made by the main agent per request.
@@ -93,3 +95,19 @@ protect high-risk work, and they too are model compliance unless a rule or hook 
 | CLS-5 | diff | Files that were modified or untracked before the run are byte-identical afterward, and none were staged, stashed, reset or cleaned. |
 | CLS-6 | transcript | A check that could not run is reported as not run, the dependent condition is unverified, and the status is not `COMPLETE`. |
 | CLS-7 | transcript | The final message names exactly one terminal status from contracts §7. |
+
+## 7. Project-level policy: the L1 focused check
+
+**Policy (project decision, `GUIDANCE`):** at L1, after the fix, run the one relevant, safe focused check even when the
+request did not ask for verification. "Relevant" means it exercises the changed behavior; "safe" means it is local, needs no
+network, secrets or shared data, and changes nothing outside the working tree. Do not run a broader suite, do not ask
+the user for permission to run it, and do not repeat it without a new edit. If the check is skipped or cannot run
+(missing tool or module, no safe check exists), report it as not run, treat the condition it covers as unverified, and use
+status `PARTIAL` (`BLOCKED` when an outside dependency is the only reason), never `COMPLETE`. Never edit a test or its
+imports to make it run.
+
+**Divergence from BLUEPRINT v1.2 §1.1.** That section says "no mandatory pre-read list and no verification nagging" because
+extra insistence over-tests, and its root contract tells the agent to run the relevant tests. S05 keeps an explicit L1 rule
+anyway: in early sessions the check ran in 2 of 5 (`task-classification-verification.md` §5), so the rule is stated once,
+bounded to one safe check, and carries no repetition or permission request. This is a project policy, not a Codex behavior
+or a blueprint requirement. The scoped wording in `AGENTS.md` was not evaluated in a model session (not run on 0.162.1 or 0.166.0).

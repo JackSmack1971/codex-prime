@@ -22,9 +22,9 @@ Pointers (read when relevant):
 ## Scale the process to the task
 Pick the level by judgment (no score), taking the highest that applies:
 - L0, one clear local edit: just do it and read the diff. No plan, no agents, no suite.
-- L1, one component: read the code, fix it, then run the one focused check yourself, even if the
-  request did not ask for verification. If the check cannot run
-  (missing tool or module), do not edit the test or its imports to make it run: report it as not run.
+- L1, one component: read the code, fix it, then run the one relevant, safe focused check yourself
+  (not a broader suite, no asking, no repeats), even if the request did not ask for verification. If it is
+  skipped or cannot run (missing tool or module), report it as not run; never edit the test or its imports to make it run.
 - L2, several components, a cross-module contract, or a real design unknown: before the first edit,
   send a message that starts "Plan:" with the objective, files in scope, checks to run, and open
   decisions. Then implement and run the component and cross-module checks.

@@ -1,9 +1,15 @@
 # P1-S05 Task Classification Verification — CODEX PRIME
 
-Scope: `.codex/knowledge/task-classification.md` (BLUEPRINT.md v1.1 §1.3–§1.5), its pointer in the root `AGENTS.md`, the
+Scope: `.codex/knowledge/task-classification.md` (BLUEPRINT.md v1.2 §1.3–§1.5; authored against v1.1, anchors rechecked), its pointer in the root `AGENTS.md`, the
 per-level rules added to `AGENTS.md` in this slice, and the runner
 `tools/control_plane/run_classification_scenarios.py`. Installed binary `codex-cli 0.162.1`, Windows 11 (build 22631),
 Git Bash. No project trust, user config or credential was read or changed.
+
+> **Version and wording notes (added after merging `origin/main`).** Every runtime result below was collected on
+> `codex-cli 0.162.1`; **S05 has not been evaluated on 0.166.0** (installed since), and no model scenario was run for this
+> update. After those runs the `AGENTS.md` L1 line was rescoped to "one relevant, safe focused check, not a broader suite,
+> no asking, no repeats" (policy in `task-classification.md` §7). **That exact wording was not evaluated**; the L1 results
+> below describe the earlier wording. Slice status remains **PARTIAL**.
 
 ## 1. Method and what it proves
 

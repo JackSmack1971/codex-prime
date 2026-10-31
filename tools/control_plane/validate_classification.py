@@ -1,4 +1,4 @@
-"""Validate .codex/knowledge/task-classification.md and its verification (P1-S05, BLUEPRINT.md v1.1 §1.3-§1.5).
+"""Validate .codex/knowledge/task-classification.md and its verification (P1-S05, BLUEPRINT.md v1.2 §1.3-§1.5).
 
 Usage: python -I tools/control_plane/validate_classification.py [--codex] [--self-test]
   (default)    static checks; exit 0 = pass, 1 = fail
