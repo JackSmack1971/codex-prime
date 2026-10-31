@@ -3,7 +3,7 @@
 Usage (all state lives in .codex-runtime/review/<id>.json; nothing here calls a model):
   python -I tools/control_plane/review_ledger.py check-policy
   python -I tools/control_plane/review_ledger.py init ID [--base REF] [--suggest-tier T]
-  python -I tools/control_plane/review_ledger.py evidence ID NAME [--record --command C --exit-code N | --not-run REASON] [--by WHO]
+  python -I tools/control_plane/review_ledger.py evidence ID NAME [--record --by WHO (--command C --exit-code N | --not-run REASON)]
   python -I tools/control_plane/review_ledger.py round ID
   python -I tools/control_plane/review_ledger.py finding ID --role ROLE --json FILE
   python -I tools/control_plane/review_ledger.py dispose ID FINDING STATUS --role ROLE --by WHO --rationale TEXT [--check NAME]
@@ -367,13 +367,26 @@ def begin_round(ledger, policy, head, state, now=None):
     return ledger["rounds"][-1]["n"]
 
 
-def add_evidence(ledger, name, source, results, state, now=None, not_run_reason=None):
-    """results: list of {command, exit_code, output_sha256?, output_tail?}. source is 'tool' (the script ran it) or 'human'."""
+def has_policy_command(policy, name):
+    return policy["evidence_commands"].get(name) is not None
+
+
+def add_evidence(ledger, policy, name, source, results, state, now=None, not_run_reason=None, by=None):
+    """results: list of {command, exit_code, output_sha256?, output_tail?}. source is 'tool' (the script ran it) or 'human'.
+    A check that has policy-defined commands can only be satisfied by the tool running them: a human may record that it was not run,
+    never a result. Human entries must name who recorded them (`by`, an unauthenticated string)."""
     verify(ledger)
     if source not in ("tool", "human"):
         raise PolicyError("evidence must come from the tool or a human; model-reported results are not evidence")
     if not isinstance(name, str) or not name:
         raise PolicyError("evidence needs a name")
+    if name not in policy["evidence_commands"]:
+        raise PolicyError(f"{name!r} is not an evidence check defined in the policy")
+    if source == "human":
+        if not (isinstance(by, str) and by.strip()):
+            raise PolicyError("human-recorded evidence needs --by (an unauthenticated name)")
+        if has_policy_command(policy, name) and not not_run_reason:
+            raise PolicyError(f"{name!r} has policy-defined commands: a human-recorded result cannot satisfy it; run it with the tool")
     if not_run_reason:
         entry = {"name": name, "source": source, "status": "not_run", "reason": not_run_reason, "results": [], "exit_code": None}
     else:
@@ -384,11 +397,14 @@ def add_evidence(ledger, name, source, results, state, now=None, not_run_reason=
         entry = {"name": name, "source": source, "status": "fail" if bad else "pass", "results": results,
                  "exit_code": bad[0] if bad else 0}
     entry.update({"state_id": state, "at": now or utcnow()})
+    if source == "human":
+        entry["by"] = by.strip()
+        entry["by_authenticated"] = False
     ledger["evidence"].append(entry)
     return entry["status"]
 
 
-def evidence_status(ledger, name, state):
+def evidence_status(ledger, policy, name, state):
     """(ok, reason) for the latest entry with this name at the current state."""
     mine = [e for e in ledger["evidence"] if e["name"] == name]
     if not mine:
@@ -396,6 +412,8 @@ def evidence_status(ledger, name, state):
     e = mine[-1]
     if e["status"] == "not_run":
         return False, f"not run: {e.get('reason')}"
+    if e["source"] != "tool" and has_policy_command(policy, name):
+        return False, "human-recorded result; this check has policy-defined commands and must be run by the tool"
     if e["state_id"] != state:
         return False, "stale (recorded for a different code state)"
     if e["status"] != "pass":
@@ -467,7 +485,7 @@ def disposition(ledger, policy, fid, status, role, by, rationale, state, check=N
     if status == "fixed" and material:
         if role == "model":
             raise PolicyError("a model cannot close a material finding; a tool or human must cite passing evidence")
-        ok, why = evidence_status(ledger, check, state) if check else (False, "no check named")
+        ok, why = evidence_status(ledger, policy, check, state) if check else (False, "no check named")
         if not ok:
             raise PolicyError(f"fixed needs a passing check at the current state: {check!r} is {why}")
     f["history"].append({"status": status, "role": role, "by": by.strip(), "at": now or utcnow(), "rationale": rationale.strip(),
@@ -492,7 +510,7 @@ def gate(ledger, policy, state):
     tier = ledger["risk"]["tier"]
     blockers = []
     for name in policy["required_evidence"][tier]:
-        ok, why = evidence_status(ledger, name, state)
+        ok, why = evidence_status(ledger, policy, name, state)
         if not ok:
             blockers.append({"check": name, "reason": why})
     unresolved = unresolved_material(ledger, policy)
@@ -502,7 +520,8 @@ def gate(ledger, policy, state):
     latest = {}
     for e in ledger["evidence"]:
         latest[e["name"]] = e
-    attested = sorted(n for n, e in latest.items() if e["source"] == "human")
+    attested = [{"check": n, "recorded_by": e.get("by"), "recorded_by_authenticated": False, "status": e["status"]}
+                for n, e in sorted(latest.items()) if e["source"] == "human"]
     if unresolved and capped:
         verdict = "ESCALATED"
     elif blockers:
@@ -593,7 +612,7 @@ def main(argv):
     sub.add_parser("check-policy")
     p = sub.add_parser("init"); p.add_argument("id"); p.add_argument("--base", default="origin/main"); p.add_argument("--suggest-tier")
     p = sub.add_parser("evidence"); p.add_argument("id"); p.add_argument("name"); p.add_argument("--record", action="store_true")
-    p.add_argument("--command"); p.add_argument("--exit-code", type=int); p.add_argument("--not-run"); p.add_argument("--by", default="operator")
+    p.add_argument("--command"); p.add_argument("--exit-code", type=int); p.add_argument("--not-run"); p.add_argument("--by")
     p = sub.add_parser("round"); p.add_argument("id")
     p = sub.add_parser("finding"); p.add_argument("id"); p.add_argument("--role", required=True); p.add_argument("--json", required=True)
     p = sub.add_parser("dispose"); p.add_argument("id"); p.add_argument("finding"); p.add_argument("status")
@@ -622,12 +641,12 @@ def main(argv):
         if a.cmd == "evidence":
             if a.record:
                 if a.not_run:
-                    add_evidence(led, a.name, "human", [], state, not_run_reason=a.not_run)
+                    add_evidence(led, policy, a.name, "human", [], state, not_run_reason=a.not_run, by=a.by)
                 else:
-                    add_evidence(led, a.name, "human", [{"command": a.command, "exit_code": a.exit_code}], state)
+                    add_evidence(led, policy, a.name, "human", [{"command": a.command, "exit_code": a.exit_code}], state, by=a.by)
             else:
-                add_evidence(led, a.name, "tool", run_policy_evidence(repo, policy, a.name), state)
-            out = evidence_status(led, a.name, state)[1]
+                add_evidence(led, policy, a.name, "tool", run_policy_evidence(repo, policy, a.name), state)
+            out = evidence_status(led, policy, a.name, state)[1]
         elif a.cmd == "round":
             try:
                 out = f"round {begin_round(led, policy, head_commit(repo), state)}"

@@ -34,7 +34,7 @@ def ledger(files=("docs/a.md",), suggested=None):
 
 def passing(led, names, state=S1):
     for n in names:
-        rl.add_evidence(led, n, "tool", [{"command": n, "exit_code": 0}], state, now=T)
+        rl.add_evidence(led, POLICY, n, "tool", [{"command": n, "exit_code": 0}], state, now=T)
 
 
 class Classification(unittest.TestCase):
@@ -109,10 +109,51 @@ class Evidence(unittest.TestCase):
     def test_human_attested_evidence_is_flagged_not_trusted_silently(self):
         led = ledger(["src/app.py"])
         passing(led, ["diff_check"])
-        rl.add_evidence(led, "focused_check", "human", [{"command": "ran the module by hand", "exit_code": 0}], S1, now=T)
+        rl.add_evidence(led, POLICY, "focused_check", "human", [{"command": "ran the module by hand", "exit_code": 0}], S1, now=T, by="jack")
         g = rl.gate(led, POLICY, S1)
-        self.assertEqual(g["unauthenticated_evidence"], ["focused_check"])
+        self.assertEqual(g["unauthenticated_evidence"],
+                         [{"check": "focused_check", "recorded_by": "jack", "recorded_by_authenticated": False, "status": "pass"}])
         self.assertEqual(g["missing_or_failed_evidence"], [])
+        self.assertEqual(led["evidence"][-1]["by"], "jack")
+        self.assertIs(led["evidence"][-1]["by_authenticated"], False)
+
+    def test_human_evidence_needs_a_name(self):
+        led = ledger(["src/app.py"])
+        for by in (None, "", "  "):
+            with self.assertRaises(rl.PolicyError):
+                rl.add_evidence(led, POLICY, "focused_check", "human", [{"command": "x", "exit_code": 0}], S1, by=by)
+
+    def test_human_cannot_satisfy_a_check_that_has_policy_commands(self):
+        # recording a passing diff_check without running it must not reach CHECKS_PASS on a low-tier change
+        led = ledger()
+        with self.assertRaises(rl.PolicyError):
+            rl.add_evidence(led, POLICY, "diff_check", "human", [{"command": "git diff --check", "exit_code": 0}], S1, now=T, by="jack")
+        self.assertEqual(led["evidence"], [])
+        g = rl.gate(led, POLICY, S1)
+        self.assertEqual((g["state"], g["tier"]), ("BLOCKED_EVIDENCE", "low"))
+        # a hand-edited ledger that carries such an entry is also rejected by the gate
+        led["evidence"].append({"name": "diff_check", "source": "human", "status": "pass", "results": [], "exit_code": 0,
+                                "state_id": S1, "at": T, "by": "jack", "by_authenticated": False})
+        g = rl.gate(led, POLICY, S1)
+        self.assertEqual(g["state"], "BLOCKED_EVIDENCE")
+        self.assertIn("policy-defined commands", g["missing_or_failed_evidence"][0]["reason"])
+        # ... and it cannot back a 'fixed' disposition either
+        led2 = ledger(["src/app.py"])
+        rl.begin_round(led2, POLICY, "head1", S1, now=T)
+        rl.add_finding(led2, POLICY, finding(), "model", now=T)
+        fid = next(iter(led2["findings"]))
+        led2["evidence"].append(dict(led["evidence"][-1]))
+        with self.assertRaises(rl.PolicyError):
+            rl.disposition(led2, POLICY, fid, "fixed", "human", "jack", "fixed it, honest", S1, check="diff_check", now=T)
+
+    def test_human_not_run_is_allowed_and_blocks(self):
+        led = ledger()
+        rl.add_evidence(led, POLICY, "diff_check", "human", [], S1, now=T, not_run_reason="no git here", by="jack")
+        self.assertEqual(rl.gate(led, POLICY, S1)["state"], "BLOCKED_EVIDENCE")
+
+    def test_unknown_evidence_name_refused(self):
+        with self.assertRaises(rl.PolicyError):
+            rl.add_evidence(ledger(), POLICY, "made_up", "tool", [{"command": "x", "exit_code": 0}], S1)
 
     def test_missing_evidence_fails_closed(self):
         led = ledger(["tools/control_plane/x.py"])  # high: needs three checks
@@ -124,11 +165,11 @@ class Evidence(unittest.TestCase):
 
     def test_not_run_stale_and_failed_evidence_block(self):
         led = ledger()
-        rl.add_evidence(led, "diff_check", "human", [], S1, now=T, not_run_reason="no git here")
+        rl.add_evidence(led, POLICY, "diff_check", "human", [], S1, now=T, not_run_reason="no git here", by="jack")
         self.assertIn("not run", rl.gate(led, POLICY, S1)["missing_or_failed_evidence"][0]["reason"])
         passing(led, ["diff_check"], S2)
         self.assertIn("stale", rl.gate(led, POLICY, S1)["missing_or_failed_evidence"][0]["reason"])
-        rl.add_evidence(led, "diff_check", "tool", [{"command": "git diff --check", "exit_code": 2}], S1, now=T)
+        rl.add_evidence(led, POLICY, "diff_check", "tool", [{"command": "git diff --check", "exit_code": 2}], S1, now=T)
         g = rl.gate(led, POLICY, S1)
         self.assertEqual(g["state"], "BLOCKED_EVIDENCE")
         self.assertIn("failed (exit 2)", g["missing_or_failed_evidence"][0]["reason"])
@@ -136,11 +177,11 @@ class Evidence(unittest.TestCase):
     def test_model_reported_evidence_refused(self):
         led = ledger()
         with self.assertRaises(rl.PolicyError):
-            rl.add_evidence(led, "diff_check", "model", [{"command": "x", "exit_code": 0}], S1)
+            rl.add_evidence(led, POLICY, "diff_check", "model", [{"command": "x", "exit_code": 0}], S1)
         with self.assertRaises(rl.PolicyError):
-            rl.add_evidence(led, "diff_check", "tool", [{"command": "x", "exit_code": True}], S1)  # bool is not an exit code
+            rl.add_evidence(led, POLICY, "diff_check", "tool", [{"command": "x", "exit_code": True}], S1)  # bool is not an exit code
         with self.assertRaises(rl.PolicyError):
-            rl.add_evidence(led, "diff_check", "tool", [], S1)
+            rl.add_evidence(led, POLICY, "diff_check", "tool", [], S1)
 
 
 class Findings(unittest.TestCase):
@@ -366,6 +407,22 @@ class Repository(unittest.TestCase):
         Path(self.root, "docs", "a.md").write_text("doc changed again\n")  # code state moved: evidence is stale
         rc, out = self.cli("gate", "docs1")
         self.assertEqual((rc, json.loads(out)["state"]), (1, "BLOCKED_EVIDENCE"))
+
+    def test_cli_refuses_recorded_diff_check_and_requires_by(self):
+        sh(self.root, "git", "checkout", "-q", "--", "tracked.txt")
+        sh(self.root, "git", "rm", "-q", "--cached", "staged.txt")
+        os.unlink(Path(self.root, "staged.txt"))
+        os.unlink(Path(self.root, "untracked.txt"))
+        Path(self.root, "docs", "a.md").write_text("doc changed\n")
+        self.assertEqual(self.cli("init", "docs2", "--base", "HEAD", "--suggest-tier", "low")[0], 0)
+        rec = ("evidence", "docs2", "diff_check", "--record", "--command", "git diff --check", "--exit-code", "0")
+        self.assertEqual(self.cli(*rec, "--by", "jack")[0], 2)  # policy command exists: a recorded pass is refused
+        self.assertEqual(self.cli("evidence", "docs2", "focused_check", "--record", "--command", "x", "--exit-code", "0")[0], 2)  # no --by
+        rc, out = self.cli("gate", "docs2")
+        self.assertEqual((rc, json.loads(out)["state"]), (1, "BLOCKED_EVIDENCE"))
+        self.assertEqual(self.cli("evidence", "docs2", "focused_check", "--record", "--command", "x", "--exit-code", "0", "--by", "jack")[0], 0)
+        led = json.loads(Path(self.root, ".codex-runtime", "review", "docs2.json").read_text())
+        self.assertEqual((led["evidence"][-1]["by"], led["evidence"][-1]["by_authenticated"]), ("jack", False))
 
     def test_cli_refuses_overwrite_unknown_review_and_bad_policy(self):
         self.assertEqual(self.cli("init", "x1", "--base", "HEAD")[0], 0)

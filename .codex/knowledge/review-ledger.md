@@ -55,8 +55,11 @@ state and policy only.
   untracked file after collecting evidence makes that evidence stale. It fails closed rather than guess: more than 2,000 untracked files, more than
   64 MiB of them, an untracked symlink, directory or nested repository, or an unreadable file raises an error (commit, ignore or remove them first).
   Git-ignored files are outside the state. The ledger directory must itself be git-ignored when it is inside the repository, or `init` and later
-  commands refuse (otherwise saving the ledger would change the state it describes). Evidence recorded by a person (`--record`) is
-  **attested and unauthenticated**; the gate lists it under `unauthenticated_evidence`.
+  commands refuse (otherwise saving the ledger would change the state it describes). Evidence recorded by a person (`--record`) needs `--by`; the
+  name is stored with the entry and is **unauthenticated provenance**. A check that has policy-defined commands (`diff_check`,
+  `static_validators`) can only be satisfied by the tool running them: a human-recorded pass or fail is refused, and a hand-edited ledger entry of
+  that kind does not satisfy the gate (a human may only record `--not-run`, which blocks). Only human-only checks (`focused_check`) can be
+  recorded by a person; these are **attestations** and the gate lists them under `unauthenticated_evidence` with `recorded_by`.
 - **Findings:** rejected unless they carry a file, a positive line, a class and severity from closed lists, and at least 10 characters of inspected
   evidence. `low` severity is recorded and never blocks. Material = critical, high, medium.
 - **Dispositions are append-only.** The recorded fields of a finding never change (a per-finding hash is verified on every load and gate);
