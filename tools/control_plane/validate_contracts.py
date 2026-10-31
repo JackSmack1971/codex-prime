@@ -37,8 +37,8 @@ OVERCLAIM = re.compile(
     r"\bguarantee[sd]?\b|\bensures?\b|cannot be bypassed|\bimpossible\b|always blocks|"
     r"\bfully enforced\b|\bcompletely prevents?\b|\bnever fails\b", re.I)
 # "Not delivered" claims in contracts.md must match the repository: (path relative to ROOT, description).
-NOT_DELIVERED = [(".codex/rules", "execution rules"), (".codex/hooks.json", "hooks"),
-                 (".codex/agents", "custom agents")]
+# Custom agents left this list in P2-S01: contracts.md now states the delivered architect agent.
+NOT_DELIVERED = [(".codex/rules", "execution rules"), (".codex/hooks.json", "hooks")]
 EXP_ROW = re.compile(r"^\| ([A-Z]+-\d+) \| ([^|]+?) \| (.+?) \|$", re.M)
 SCEN_ROW = re.compile(r"^\| (S\d+) \| (\w+) \| (.+?) \| (.+?) \| (.+?) \| `?([A-Z]+)`? \|$", re.M)
 

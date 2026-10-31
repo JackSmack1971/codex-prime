@@ -25,7 +25,9 @@ layers apply instead.
 
 **Delivered controls today.** This project ships `sandbox_mode = "workspace-write"`, `approval_policy =
 "on-request"`, command network off, and secret-named environment variables excluded. It ships **no**
-execution rules, **no** hooks, and **no** custom agents yet. No contract below relies on one of those.
+execution rules and **no** hooks yet. It ships one custom agent, `architect` (`.codex/agents/architect.toml`, P2-S01):
+its read-only intent is `GUIDANCE` plus `features.shell_tool = false`, and its discovery and spawning are unverified
+(`architect-agent-verification.md`). No contract below relies on it, on rules, or on hooks.
 When a later slice adds one, update the affected contract and its label in the same change.
 
 **Rules from any active layer also apply** (NC13), and the project does not control them. On the host
