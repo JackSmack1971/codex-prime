@@ -1,8 +1,9 @@
 # Engineering Contracts — CODEX PRIME
 
 Seven contracts that define how work is authorized, scoped, delegated, changed, executed, evidenced and
-reported. Source: BLUEPRINT.md v1.1 Part III §7 (an external design document, not part of this repository;
-citations to it are for the builder, and the `NC<n>` matrix entries are the in-repo evidence). Installed Codex: `codex-cli 0.162.1`.
+reported. Source: BLUEPRINT.md Part III §7, written against v1.1; the cited anchors were rechecked against the
+v1.2 file now tracked at the repository root (`rebaseline-0166.md` §3). Citations to it are for the builder,
+and the `NC<n>` matrix entries are the in-repo evidence. Installed Codex: `codex-cli 0.162.1`.
 The root `AGENTS.md` points here. Codex does not discover this file by itself: it applies because
 `AGENTS.md` and skills reference it, so it is guidance the model reads, not a control Codex runs.
 
