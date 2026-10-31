@@ -55,7 +55,8 @@ Source 3 (version-matched repository tag) was not used. Source 4 (general search
 
 | Fact | Value |
 | --- | --- |
-| File in this workspace | untracked at S06 start; `BLUEPRINT.md`, 157,855 bytes, sha256 `543d3fb0cb852dce155007d07af9ae63259e2831f6aaa97faf443721e2690235`, LF endings, 2010 lines |
+| File in this workspace | untracked at S06 start; `BLUEPRINT.md`, 157,855 bytes, sha256 `543d3fb0cb852dce155007d07af9ae63259e2831f6aaa97faf443721e2690235`, LF endings, 2010 lines. This is the original and was committed unchanged in `46deff0` |
+| Follow-up wording correction | A later S06 commit narrowed protected-path wording in the tracked copy (revision summary, non-negotiable rules, runtime-output rationale, file-ownership table, §4.2, Hook 3, §4.7, §6.5): "approval required" now means the project's operator-authorization workflow, and whether a model-session write to a protected path prompts or is denied is stated as unverified (§2 row 9). The tracked file then differs from the original hash above (new sha256 `f62e15bcf80fca01aa247efb704185c64e2ff91af84be0b85493c609da1cd7e5`, 159,435 bytes). The original bytes remain recoverable from commit `46deff0` |
 | Self-declared revision | header "Architecture Specification v1.2 · October 31, 2026"; "Revision 1.2 (October 31, 2026)" block |
 | File recorded by P0-S01 (`baseline-report.md`) | 154,151 bytes, sha256 prefix `7489C316…`. **A different file.** The shipped docs were written against that file (cited as v1.1), which is not in this repository or its history, so a content diff v1.1 → v1.2 was not possible |
 | Why it is treated as the intended v1.2 | The operator directed S06 to reconcile with "BLUEPRINT.md v1.2 … available in this workspace"; the header and revision block match; the hash differs from the v1.1 record. No stronger provenance exists locally. The untracked original was copied, not moved |

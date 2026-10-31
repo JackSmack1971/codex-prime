@@ -6,7 +6,7 @@ Technical blueprint · Architecture Specification v1.2 · October 31, 2026
 
 > **Revision 1.2 (October 31, 2026).** Reconciled the blueprint with the live official Codex documentation and the accompanying Claude builder contract. The documentation URLs below were opened on October 31, 2026; legacy `developers.openai.com/codex/` paths redirect to `learn.chatgpt.com/docs`. This review corrects over-broad claims about hook failure behavior, sharpens the distinction between documented behavior and local validation, and treats the large specialist/skill set as a staged proposal rather than a proven optimum. Principal changes from v1.1:
 >
-> - Codex's `workspace-write` sandbox keeps `.codex/`, `.agents/`, `.git/` and `.aws/` read-only. Everything Codex writes at runtime (evidence, task state) now lives in `.codex-runtime/`, and control-plane changes made by Codex require an approval by design.
+> - Codex's `workspace-write` sandbox keeps `.codex/`, `.agents/`, `.git/` and `.aws/` read-only. Everything Codex writes at runtime (evidence, task state) now lives in `.codex-runtime/`, and control-plane changes are made by the operator or proposed for operator authorization (a project workflow). Whether a Codex write attempt to a protected path prompts or is simply denied is unverified for a model session; do not assume an approval prompt.
 > - Context restoration after compaction moved from `PreCompact`/`PostCompact` to `SessionStart` with `source: "compact"`.
 > - Hook behavior is event-specific. Supported explicit denials can block or continue a turn, but callback errors, timeouts, malformed output, and unsupported fields may fail open for important events such as `PreToolUse`. Do not describe all hooks as uniformly fail-open or fail-closed; test each event contract. `Stop` handlers must account for `stop_hook_active`.
 > - Execution rules are scoped to escalations outside the sandbox; in-sandbox enforcement must be verified, and rules are tested with `codex execpolicy check`.
@@ -113,7 +113,7 @@ Native agent definitions, skills, rule files, and hooks are documented by OpenAI
 - Existing user changes must be preserved.
 - Generated systems must not invent configuration keys or undocumented Codex interfaces.
 - Native permissions always take precedence over workflow convenience.
-- Self-modification of control-plane files requires validation. Under `workspace-write`, `.codex/` and `.agents/` are read-only to Codex, so every Codex-initiated change there passes through an approval. Keep it that way; never widen writable roots to remove the prompt.
+- Self-modification of control-plane files requires validation. Under `workspace-write`, `.codex/` and `.agents/` are documented as read-only to Codex, so a Codex-initiated change there is expected to be refused or to need operator action; the exact CLI outcome (prompt or denial) is unverified in a model session. Keep it that way; never widen writable roots to make such writes succeed.
 - Nothing Codex writes during normal operation lives under `.codex/`, `.agents/`, or `.git/`.
 - When the installed version lacks a capability, the design must degrade gracefully instead of secretly adding an external framework.
 
@@ -216,7 +216,7 @@ Changes from v1.0 and why:
 - **No `reviewer.toml`.** Native `/review` (CLI presets: base branch, uncommitted changes, commit, custom instructions) starts a dedicated reviewer and does not modify the working tree; `review_model` sets its model. Add a custom reviewer only if `/review` proves insufficient in Phase 6.
 - **No `.codex/workflows/` or `.codex/contracts/` directories.** Nothing native discovers them, and they duplicated the skills. Workflow detail lives in each skill's `references/`; the five contracts live in one `.codex/knowledge/contracts.md` that the root `AGENTS.md` points to.
 - **No `src/AGENTS.md` or `docs/AGENTS.md` by default.** Codex builds its instruction chain once per run, from the project root down to the launch directory, and stops there. When Codex is launched at the root, nested files are never loaded, even while it edits files under them. Put directory-specific guidance in the root file as contextual pointers ("for schema changes, read `docs/database.md`"). Add nested files only for subtrees where people actually launch Codex (`codex --cd services/payments`), and verify them from that directory.
-- **Runtime output moved to `.codex-runtime/`.** Under `workspace-write`, `.codex/` and `.agents/` are recursively read-only to Codex, so the v1.0 `.codex/results/` location would have required an approval for every evidence write.
+- **Runtime output moved to `.codex-runtime/`.** Under `workspace-write`, `.codex/` and `.agents/` are recursively read-only to Codex, so the v1.0 `.codex/results/` location would have had every evidence write refused or dependent on operator action.
 
 The `tools/control_plane` scripts are optional local validators, not a separate orchestration runtime. They should use an already-available repository language runtime and its standard library where practical.
 
@@ -227,17 +227,19 @@ If Python is not part of the existing project environment, implementation should
 | Files                  | Owner or authority                    | Modification rule                                             |
 | ---------------------- | ------------------------------------- | ------------------------------------------------------------- |
 | Root `AGENTS.md`       | Operator; Codex may propose           | Explicit governance change                                    |
-| `.codex/config.toml`   | Operator; Codex may propose           | Approval required (protected path); configuration validation  |
-| `.codex/agents/`       | Agent architecture workflow           | Approval required; native agent discovery test                |
-| `.agents/skills/`      | Skill development workflow            | Approval required; activation and quality tests               |
-| `.codex/rules/`        | Execution governance workflow         | Approval required; `codex execpolicy check` positive and negative cases |
-| `.codex/hooks*`        | Governance workflow                   | Approval required; fixture tests; re-trust in `/hooks` after any change |
-| `.codex/knowledge/`    | Relevant documentation specialist     | Approval required; evidence and source review                 |
+| `.codex/config.toml`   | Operator; Codex may propose           | Operator authorization (protected path); configuration validation |
+| `.codex/agents/`       | Agent architecture workflow           | Operator authorization; native agent discovery test           |
+| `.agents/skills/`      | Skill development workflow            | Operator authorization; activation and quality tests          |
+| `.codex/rules/`        | Execution governance workflow         | Operator authorization; `codex execpolicy check` positive and negative cases |
+| `.codex/hooks*`        | Governance workflow                   | Operator authorization; fixture tests; re-trust in `/hooks` after any change |
+| `.codex/knowledge/`    | Relevant documentation specialist     | Operator authorization; evidence and source review            |
+
+"Operator authorization" is the project's workflow: the operator makes or approves the change outside a sandboxed Codex write. It does not mean Codex will show an approval prompt for a protected-path write.
 | `.codex-runtime/`      | Task execution                        | Generated, sanitized, gitignored                              |
 | Application source     | Assigned implementer                  | Scoped engineering assignment                                 |
 | Tests                  | Assigned test engineer or implementer | No weakening without explicit justification                   |
 
-The current official documentation describes `.git`, `.codex`, `.agents`, and `.aws` in writable roots as protected read-only paths under `workspace-write`. Do not assume a write will necessarily produce an approval prompt: verify the installed CLI outcome. Keep these paths outside any additional writable-root grant unless the approved design explicitly changes that boundary.
+The current official documentation describes `.git`, `.codex`, `.agents`, and `.aws` in writable roots as protected read-only paths under `workspace-write`. Do not assume a write will necessarily produce an approval prompt: verify the installed CLI outcome. P1-S06 observed denial of such writes through the `codex sandbox` helper on 0.166.0 (existing files unchanged); whether a model-session attempt prompts or is denied remains unverified. Keep these paths outside any additional writable-root grant unless the approved design explicitly changes that boundary.
 
 The Git repository remains the authoritative record of durable control-plane changes. Session transcripts and ephemeral agent context are not reliable substitutes for checked-in design decisions.
 
@@ -1338,7 +1340,7 @@ Define execution policy according to consequence. The "Native control" column na
 | Read-only               | Search source, inspect tests, `git status`          | Generally allowed                          | Sandbox allows |
 | Local reversible write  | Edit a source file, add a test                      | Allowed within assigned scope              | Sandbox allows inside workspace roots |
 | Local destructive write | Delete files, `git clean`, overwrite data           | Block or require explicit authorization    | Not blocked by the sandbox inside the workspace. Use a `forbidden` rule (if Phase 0 shows rules apply in-sandbox) and a `PreToolUse` hook; rely on Git and backups for recovery |
-| History rewrite         | `git reset --hard`, `git checkout -- .`, `git stash` | Explicit authorization                    | Sandbox escalates (protected `.git`) |
+| History rewrite         | `git reset --hard`, `git checkout -- .`, `git stash` | Explicit authorization                    | `.git` is a documented protected read-only path; the CLI outcome of a model-session attempt (prompt or denial) is unverified |
 | Environment mutation    | Install packages, alter system config               | Escalate according to scope                | Sandbox escalates (outside roots, network off) |
 | External read           | Fetch remote docs from a command                    | Respect sandbox/network policy             | Command network off by default; hosted web search governed separately by `web_search` |
 | External write          | Push Git, publish package, alter API resources      | Explicit authorization                     | Sandbox escalates (network off); `prompt` rule; MCP/app approval modes |
@@ -1448,7 +1450,7 @@ Use six minimal, separately testable handlers.
 | ------------------------ | ----------------------------------------------- | ------------------------------------------------ | --------- |
 | `session_context.py`     | `SessionStart` (`startup\|resume\|clear\|compact`) | Inject short invariants; after `compact`, re-inject saved task state | No |
 | `pre_tool_policy.py`     | `PreToolUse` (`Bash\|apply_patch`)              | Return a documented denial for a narrow list of unsafe operations | Blocking only on supported explicit denial; errors may fail open |
-| `permission_policy.py`   | `PermissionRequest` (`Bash\|apply_patch`)       | Deny escalations that are never acceptable; otherwise defer to the user | Yes, deny-only |
+| `permission_policy.py`   | `PermissionRequest` (`Bash\|apply_patch`)       | Deny escalation requests that are never acceptable, when this event fires; otherwise defer to the user | Yes, deny-only |
 | `execution_evidence.py`  | `PostToolUse` (`Bash`), `async: true`           | Record sanitized command outcomes                | No |
 | `subagent_contract.py`   | `SubagentStart`, `SubagentStop`                 | Inject delegation rules; send back a subagent whose result lacks a status | Continuation only |
 | `completion_gate.py`     | `Stop`                                          | Ask for one more pass when the final message claims unexecuted verification | Continuation only |
@@ -1561,9 +1563,9 @@ A script invoked by a hook is not a universal shell parser. Matching `"rm -rf"` 
 
 ### Hook 3 — Permission policy (deny-only)
 
-Event: `PermissionRequest`. It runs only when Codex is about to ask for approval (sandbox escalations, managed-network approvals), never for commands that do not need approval.
+Event: `PermissionRequest`. Per the documentation it runs only when Codex is about to ask for approval (sandbox escalations, managed-network approvals), never for commands that do not need approval. It can act only when that documented event is invoked. Do not assume a write to a protected path (`.codex/`, `.agents/`, `.git/`) triggers it: that write may be denied by the sandbox without any approval request, and that is unverified. Protection of the control plane therefore rests on the sandbox and operator workflow, not on this hook.
 
-Deny escalations the project never accepts, for example force pushes or writes to `.codex/hooks*` and `.codex/rules/` (so the control plane cannot propose weakening its own guards mid-task):
+Deny escalations the project never accepts, for example force pushes or an escalation request that targets `.codex/hooks*` and `.codex/rules/`, when such a request reaches the hook (so the control plane cannot propose weakening its own guards mid-task):
 
 ```json
 {
@@ -1678,7 +1680,8 @@ The governance suite must demonstrate:
 
 - Correct project configuration loading (trusted project).
 - Expected sandbox restrictions, including protected paths and network off.
-- Expected approval prompts.
+- Observed outcome (prompt or denial) of an attempted protected-path write in a model session, recorded rather than assumed.
+- Expected approval prompts for the documented escalation cases (outside-workspace edits, command network).
 - Correct command-rule matching via `codex execpolicy check`, including reordered and shell-wrapped forms.
 - Established answer to whether `forbidden` rules apply to in-sandbox commands.
 - Correct hook trust behavior (new and changed hooks skipped until trusted).
@@ -2273,7 +2276,7 @@ flowchart TD
 
 The control plane may identify deficiencies and propose changes. It should not silently rewrite its security policy, hooks, permissions, or instruction hierarchy as a side effect of an unrelated engineering task.
 
-The sandbox enforces this: `.codex/` and `.agents/` are read-only to Codex under `workspace-write`, so any Codex-proposed control-plane change surfaces as an approval, and the `PermissionRequest` hook denies changes to hooks and rules outright (§4.4, Hook 3). Changes to hooks and rules are made by the operator or a separate maintenance session, followed by fixture tests and re-trust.
+The sandbox enforces this: `.codex/` and `.agents/` are read-only to Codex under `workspace-write`, so a Codex-proposed control-plane change is refused or left to operator action (whether it first prompts is unverified), and the `PermissionRequest` hook denies escalation requests that target hooks and rules only if such a request reaches it (§4.4, Hook 3). Changes to hooks and rules are made by the operator or a separate maintenance session, followed by fixture tests and re-trust.
 
 The "authorized" step is a human decision. Automatic approval review (`auto_review`) must not be the authorizer for control-plane changes.
 
