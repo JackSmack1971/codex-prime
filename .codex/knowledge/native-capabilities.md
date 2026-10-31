@@ -208,6 +208,7 @@ Common to every entry: `installed_version` = `codex-cli 0.162.1`.
 | runtime_verified | No. Needs a model session. |
 | limitations | Non-interactive runs: an action needing new approval fails and the error returns to the parent (D5). Read-heavy parallelism is advised; parallel writers conflict. `agents.max_threads` is a legacy alias; the loader still accepts it with no warning observed (row 25). Subagent hooks do not run `SessionEnd`/`Interrupt` (D1). |
 | fallback | Sequential single-agent work; set `agents.enabled = false` if delegation proves unsafe. |
+| 0.166.0 spawn interface | The rendered `spawn_agent` schema has no agent selector and marks `message` encrypted; this does not show spawn-by-name is unsupported. Actual spawning, discovery and routing are unverified. See conflict C14 and `spawn-interface-0166.md` (probe: `tools/control_plane/probe_spawn_interface.py`). |
 
 ### 6. Repository skill discovery
 
@@ -483,6 +484,7 @@ Recorded per `CLAUDE.md`; none is resolved silently.
 | C11 | BLUEPRINT lines 16, 157 and 211 (§3) say `contracts.md` holds five contracts (task, delegation, evidence, change, completion), and line 474 (§1.1) lists four of them; Part III §7 defines seven (adds authority, execution) | n/a (blueprint-internal) | `contracts.md` carries all seven; the root `AGENTS.md` pointer now names all seven (P1-S04) |
 | C12 | BLUEPRINT §7 lists the sixth contract as "Evidence" but its body (§7.4) is titled "Verification contract"; Delegation and Execution have no §7 body | n/a (blueprint-internal) | Named "Evidence" in `contracts.md`; §7.4's table is its rule 2; Delegation takes §2.4–§2.8, Execution takes §4/§12/§2.8 and the native entries 11–14, 19, 20, 24 |
 | C13 | BLUEPRINT §7.5 defines five outcomes without a tie-break; §12 says a safety-monitoring pause is "its own outcome" | Codex has no such states (§7.5 says so) | `contracts.md` §7 adds a precedence order (CANCELLED, COMPLETE, BLOCKED, FAILED, PARTIAL) and reports a safety pause as `BLOCKED` unless the user stopped it. Project convention, not a Codex behavior; revisit if the blueprint adds a sixth outcome |
+| C14 | D5 and the subagents page: agents are identified and spawned by name (built-in `default`, `worker`, `explorer`; custom by `name`) | `codex debug prompt-input` on 0.166.0 renders one `spawn_agent` tool with parameters `fork_turns`, `message`, `model`, `reasoning_effort`, `task_name`; no agent or role selector; `message` flagged encrypted; the built-in names do not appear in the rendered prompt (P2-S03) | Observed difference between sources, not proof that spawn-by-name is unsupported. Work depending on spawn-by-name is `BLOCKED: evidence` until observed in a trusted session; see `spawn-interface-0166.md` |
 
 Note: Codex docs live on `learn.chatgpt.com/docs/` (BLUEPRINT v1.1 already says so); cite that host.
 

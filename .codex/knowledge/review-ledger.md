@@ -6,7 +6,7 @@ input, not authority: this repository's architecture, BLUEPRINT.md v1.2 and `CLA
 Windows 11 build 22631, Git Bash, `python -I`, git 2.53.0. Base: `origin/main` `7a53e0dab1df2dfa1700633250b8c640c2fc5016`.
 
 Started while **Phase 1 is PARTIAL** on the project owner's decision; its open evidence is unresolved (O-A, O-B, O-I, O-J `BLOCKED: operator`;
-S05 open; C1 and C2 recorded). No model session, `codex exec`, `/review`, or operator check was run.
+S05 open; C1 and C2 recorded, historical context from the Phase 0/1 conflict register: C1 is the `codex sandbox` subcommand mismatch, C2 is the `codex exec --ask-for-approval` mismatch). No model session, `codex exec`, `/review`, or operator check was run.
 
 **Status: PARTIAL. This is a local consistency tool, not a security boundary.** It keeps review facts consistent (evidence bound to a code state,
 findings, dedup, a round cap, risk floors). It cannot authenticate anyone: roles and names are typed by the caller. **Human authorization is
